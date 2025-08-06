@@ -38,18 +38,15 @@ class Settings(BaseSettings):
         # 图像格式 (OCR)
         "jpg", "jpeg", "png", "tiff", "bmp", "webp",
         # 代码格式
-        "py", "js", "html", "css", "java", "cpp", "c", "go", "rs"
+        "py", "js", "html", "css", "java", "cpp", "c", "go", "rs",
+        # 音频文件
+        "mp4","mp3","wav","flac"
     ]
     
     # 目录设置
     UPLOAD_DIR: str = "uploads"
     TEMP_DIR: str = "temp"
     STATIC_DIR: str = "static"
-    
-    # OCR设置
-    OCR_ENGINE: str = "tesseract"  # tesseract | paddleocr | easyocr
-    OCR_LANGUAGES: List[str] = ["eng", "chi_sim"]  # 英文和简体中文
-    OCR_CONFIDENCE_THRESHOLD: float = 0.6
     
     # 向量化设置
     DEFAULT_CHUNK_SIZE: int = 1000  # tokens
@@ -60,9 +57,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     TASK_TIMEOUT: int = 300  # 5分钟
     
-    # 数据库设置
-    DATABASE_URL: str = "sqlite:///./file_reading_system.db"
-    
+
     # 日志设置
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/app.log"

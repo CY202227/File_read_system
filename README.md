@@ -34,9 +34,6 @@ file_read_system/
 │   ├── ocr/               # OCR 光学字符识别模块
 │   │   ├── __init__.py
 │   │   ├── base_ocr.py        # OCR 引擎基类
-│   │   ├── tesseract_ocr.py   # Tesseract OCR 实现
-│   │   ├── paddleocr_engine.py # PaddleOCR 实现
-│   │   ├── cloud_ocr.py       # 云端 OCR 服务 (百度、腾讯、阿里)
 │   │   ├── preprocessor.py    # 图像预处理
 │   │   └── postprocessor.py   # OCR 结果后处理
 │   │
@@ -112,16 +109,19 @@ file_read_system/
 ## 🔧 各模块详细说明
 
 ### 📊 API 层 (`app/api/`)
+
 - **routes/**: 定义 RESTful API 路由，包括文件上传、处理状态查询、结果下载等接口
 - **middleware/**: 请求中间件，处理认证、限流、CORS 等
 - **schemas/**: 使用 Pydantic 定义请求/响应数据模型
 
 ### 🧠 核心业务层 (`app/core/`)
+
 - **file_manager.py**: 管理文件的上传、存储、删除等操作
 - **task_queue.py**: 异步任务队列，处理大文件的后台解析任务
 - **exceptions.py**: 定义系统自定义异常类
 
 ### 🔍 解析器层 (`app/parsers/`)
+
 **职责**: 将不同格式的文件转换为统一的内部数据结构
 
 - **base_parser.py**: 解析器抽象基类，定义统一接口
@@ -133,6 +133,7 @@ file_read_system/
 - **binary_parser.py**: 处理二进制文件的元数据提取
 
 ### 👁️ OCR模块 (`app/ocr/`)
+
 **职责**: 专门处理图像中的文字识别，支持多种OCR引擎
 
 - **base_ocr.py**: OCR引擎抽象基类，定义统一的OCR接口
@@ -143,6 +144,7 @@ file_read_system/
 - **postprocessor.py**: OCR结果后处理（文本矫正、置信度过滤、格式整理）
 
 ### ⚙️ 处理器层 (`app/processors/`)
+
 **职责**: 对解析后的数据进行二次处理和优化
 
 - **chunker.py**: 基础文本分块，支持按段落、句子、字符数等方式切分
@@ -151,6 +153,7 @@ file_read_system/
 - **transformer.py**: 数据格式转换和结构化处理
 
 ### 🧮 向量化模块 (`app/vectorization/`)
+
 **职责**: 专门处理面向向量化的文本切块和预处理（不包含实际向量化）
 
 - **semantic_chunker.py**: 语义感知的智能分块器，保持语义完整性
@@ -160,6 +163,7 @@ file_read_system/
 - **chunk_evaluator.py**: 分块质量评估器，评估分块效果
 
 ### 📤 输出层 (`app/outputs/`)
+
 **职责**: 将处理后的数据转换为用户需要的输出格式
 
 - **markdown_output.py**: 生成格式化的 Markdown 文档
@@ -169,6 +173,7 @@ file_read_system/
 - **custom_output.py**: 支持用户自定义输出格式
 
 ### 🛠️ 工具层 (`app/utils/`)
+
 - **file_utils.py**: 文件操作、格式检测、大小验证等
 - **validation.py**: 输入参数验证和数据校验
 - **logging.py**: 结构化日志记录
@@ -177,6 +182,7 @@ file_read_system/
 ## 🚀 核心功能特性
 
 ### 📁 支持的文件格式
+
 - **文本文件**: .txt, .md, .csv, .tsv
 - **Office 文档**: .docx, .xlsx, .pptx
 - **PDF 文档**: .pdf
@@ -185,6 +191,7 @@ file_read_system/
 - **其他格式**: 可扩展支持
 
 ### 📋 输出格式选项
+
 - **Markdown**: 格式化文档，支持表格、列表、代码块
 - **DataFrame**: Pandas DataFrame 或 CSV 格式
 - **JSON**: 结构化数据输出
@@ -193,6 +200,7 @@ file_read_system/
 - **自定义格式**: 根据用户需求定制
 
 ### 🔧 处理功能
+
 - **智能分块**: 按语义、段落或固定长度分割
 - **内容分析**: 关键词提取、摘要生成
 - **数据清洗**: 去除格式噪声、标准化文本
@@ -202,11 +210,13 @@ file_read_system/
 ## 💻 技术栈建议
 
 ### 后端框架
+
 - **FastAPI**: 现代、高性能的 Python Web 框架
 - **Celery**: 分布式任务队列
 - **Redis**: 缓存和任务队列存储
 
 ### 文件处理库
+
 - **pandas**: 数据处理和 DataFrame 操作
 - **openpyxl**: Excel 文件读写
 - **python-docx**: Word 文档处理
@@ -214,6 +224,7 @@ file_read_system/
 - **chardet**: 字符编码检测
 
 ### OCR 相关库
+
 - **pytesseract**: Tesseract OCR Python 封装
 - **PaddleOCR**: 百度开源的高精度OCR工具
 - **Pillow (PIL)**: 图像处理和预处理
@@ -222,6 +233,7 @@ file_read_system/
 - **云端OCR SDK**: 百度、腾讯、阿里云、Azure等
 
 ### 向量化切块相关库
+
 - **spacy**: 自然语言处理，语义分析
 - **nltk**: 自然语言工具包，句子分割
 - **langchain**: 文本分块和向量化工具链
@@ -229,16 +241,19 @@ file_read_system/
 - **sentence-transformers**: 语义相似度计算（用于分块质量评估）
 
 ### 数据库
+
 - **SQLite/PostgreSQL**: 元数据存储
 - **MinIO/S3**: 文件对象存储
 
 ### 前端 (可选)
+
 - **Vue.js/React**: 用户界面
 - **Element Plus/Ant Design**: UI 组件库
 
 ## 🔄 工作流程
 
 ### 标准处理流程
+
 1. **文件上传** → 验证格式和大小
 2. **格式识别** → 选择合适的解析器
 3. **内容解析** → 提取文本和结构化数据
@@ -247,6 +262,7 @@ file_read_system/
 6. **结果返回** → 下载或在线预览
 
 ### OCR 处理流程
+
 1. **图像上传** → 格式验证（jpg, png, tiff等）
 2. **图像预处理** → 去噪、增强、校正（`ocr/preprocessor.py`）
 3. **OCR引擎选择** → 根据语言和精度要求选择引擎
@@ -255,6 +271,7 @@ file_read_system/
 6. **文本输出** → 返回结构化文本数据
 
 ### 向量化切块流程
+
 1. **文本输入** → 已解析的纯文本内容
 2. **分块策略选择** → 固定长度/语义边界/滑动窗口等
 3. **语义分析** → 识别段落、句子边界，保持语义完整性

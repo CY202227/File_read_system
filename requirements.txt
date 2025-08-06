@@ -13,12 +13,13 @@ pydantic
 pydantic-settings
 
 # 文件处理
+markitdown       # 文件转markdown处理
 openpyxl         # Excel文件处理
 python-docx      # Word文档处理
 PyPDF2           # PDF文档处理
 pdfplumber       # PDF高级处理
 chardet          # 字符编码检测
-markitdown       # Markdown文件处理
+
 
 # OCR相关
 

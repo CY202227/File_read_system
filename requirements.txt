@@ -1,0 +1,69 @@
+# 文件阅读系统依赖包
+# File Reading System Dependencies
+
+# Web框架
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# 数据处理
+pandas==2.1.4
+numpy==1.24.4
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# 文件处理
+openpyxl==3.1.2          # Excel文件处理
+python-docx==1.1.0       # Word文档处理
+PyPDF2==3.0.1            # PDF文档处理
+pdfplumber==0.10.0       # PDF高级处理
+chardet==5.2.0           # 字符编码检测
+
+# OCR相关
+
+
+# 自然语言处理
+spacy==3.7.2             # NLP处理
+nltk==3.8.1              # 自然语言工具包
+langchain==0.0.350       # 文本分块工具
+tiktoken==0.5.2          # OpenAI tokenizer
+sentence-transformers==2.2.2  # 句子向量化
+
+# 任务队列
+celery==5.3.4            # 分布式任务队列
+redis==5.0.1             # Redis客户端
+
+# 数据库
+sqlalchemy==2.0.23       # ORM
+alembic==1.13.1          # 数据库迁移
+psycopg2-binary==2.9.9   # PostgreSQL适配器
+
+# 系统监控
+psutil==5.9.6            # 系统性能监控
+
+# 开发工具
+pytest==7.4.3           # 测试框架
+pytest-asyncio==0.21.1  # 异步测试
+httpx==0.25.2           # HTTP客户端(用于测试)
+black==23.11.0          # 代码格式化
+flake8==6.1.0           # 代码检查
+mypy==1.7.1             # 类型检查
+
+# 配置管理
+python-dotenv==1.0.0    # 环境变量管理
+
+# 文档生成
+mkdocs==1.5.3           # 文档生成
+mkdocs-material==9.4.8  # 文档主题
+
+# 安全相关
+cryptography==41.0.8    # 加密库
+passlib==1.7.4          # 密码处理
+
+# 日志处理
+structlog==23.2.0       # 结构化日志
+
+# 其他工具
+python-magic==0.4.27    # 文件类型检测
+tqdm==4.66.1            # 进度条
+requests==2.31.0        # HTTP请求

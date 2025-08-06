@@ -1,0 +1,95 @@
+# 文件阅读系统 .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 项目特定文件
+uploads/
+temp/
+logs/
+*.log
+
+# 数据库
+*.db
+*.sqlite
+*.sqlite3
+
+# 临时文件
+.DS_Store
+Thumbs.db
+
+# 配置文件
+.env
+config/local_settings.py
+
+# 缓存
+.cache/
+*.cache
+
+# 系统文件
+.DS_Store
+desktop.ini
+
+# OCR临时文件
+ocr_temp/
+*.tmp
+
+# 向量化缓存
+embeddings_cache/
+chunk_cache/

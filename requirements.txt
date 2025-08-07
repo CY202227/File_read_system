@@ -19,6 +19,7 @@ python-docx      # Word文档处理
 PyPDF2           # PDF文档处理
 pdfplumber       # PDF高级处理
 chardet          # 字符编码检测
+aiofiles         # 异步文件操作
 
 
 # OCR相关

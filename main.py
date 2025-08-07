@@ -16,7 +16,7 @@ import sys
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from app.api.routes import file_upload, file_process, health
+from app.api.routes import file_upload, file_process, health, task_management
 from app.core.exceptions import setup_exception_handlers
 from config.settings import settings
 from config.logging_config import setup_logging
@@ -69,7 +69,8 @@ def create_app() -> FastAPI:
     # 注册路由
     app.include_router(health.router, prefix="/api/v1", tags=["健康检查"])
     app.include_router(file_upload.router, prefix="/api/v1", tags=["文件上传"])
-    app.include_router(file_process.router, prefix="/api/v1", tags=["文件处理"])
+    app.include_router(task_management.router, prefix="/api/v1", tags=["任务管理"])
+#    app.include_router(file_process.router, prefix="/api/v1", tags=["文件处理"])
     
     # 设置异常处理器
     setup_exception_handlers(app)
@@ -93,7 +94,8 @@ async def root():
             "OCR 光学字符识别",
             "智能文本分块",
             "向量化预处理",
-            "多种输出格式 (Markdown, DataFrame, JSON等)"
+            "多种输出格式 (Markdown, DataFrame, JSON等)",
+            "任务管理和队列系统"
         ]
     }
 

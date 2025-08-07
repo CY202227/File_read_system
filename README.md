@@ -18,7 +18,7 @@ file_read_system/
 │   ├── core/              # 核心业务逻辑
 │   │   ├── __init__.py
 │   │   ├── file_manager.py    # 文件管理器
-│   │   ├── task_queue.py      # 任务队列管理
+│   │   ├── task_manager.py     # 任务管理
 │   │   └── exceptions.py      # 自定义异常
 │   │
 │   ├── parsers/           # 文件解析器

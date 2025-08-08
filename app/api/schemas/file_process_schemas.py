@@ -1,0 +1,393 @@
+"""
+文件处理相关的数据模型
+File processing related schemas
+"""
+
+from typing import Optional, List, Dict, Any, Literal, Union
+from pydantic import BaseModel, Field
+from pydantic import field_validator, model_validator
+import json
+
+
+class ProcessingPurpose(BaseModel):
+    """处理目的模型"""
+    value: str = Field(..., description="处理目的值")
+    
+    @field_validator('value')
+    def validate_purpose(cls, v):
+        valid_values = ["format_conversion", "content_reading", "both"]
+        if v not in valid_values:
+            raise ValueError(f"处理目的必须是以下之一: {valid_values}")
+        return v
+
+
+class OutputFormat(BaseModel):
+    """输出格式模型"""
+    value: str = Field(..., description="输出格式值")
+    
+    @field_validator('value')
+    def validate_format(cls, v):
+        valid_values = ["markdown", "json", "csv", "excel", "dataframe", "text", "chunks", "summary"]
+        if v not in valid_values:
+            raise ValueError(f"输出格式必须是以下之一: {valid_values}")
+        return v
+
+
+class ContentReturnFormat(BaseModel):
+    """内容返回格式模型"""
+    value: str = Field(..., description="内容返回格式值")
+    
+    @field_validator('value')
+    def validate_return_format(cls, v):
+        valid_values = ["structured", "plain_text", "mixed", "original"]
+        if v not in valid_values:
+            raise ValueError(f"内容返回格式必须是以下之一: {valid_values}")
+        return v
+
+
+class TablePrecision(BaseModel):
+    """表格精度模型"""
+    value: int = Field(..., ge=0, le=20, description="表格精度值（0-20，数值越大精度越高）")
+    
+    @field_validator('value')
+    def validate_precision(cls, v):
+        if not (0 <= v <= 20):
+            raise ValueError("表格精度必须在0到20之间")
+        return v
+
+
+class ChunkingStrategy(BaseModel):
+    """分块策略模型 - 6个等级的分块方法"""
+    value: str = Field(..., description="分块策略值")
+    
+    @field_validator('value')
+    def validate_strategy(cls, v):
+        valid_values = [
+            # Auto: 自动选择
+            "auto",
+            # Level 1: Character Splitting
+            "character_splitting",
+            # Level 2: Recursive Character Text Splitting  
+            "recursive_character_splitting",
+            # Level 3: Document Specific Splitting
+            "document_specific_splitting",
+            # Level 4: Semantic Splitting
+            "semantic_splitting", 
+            # Level 5: Agentic Splitting
+            "agentic_splitting",
+            # Bonus Level: Alternative Representation Chunking
+            "alternative_representation_chunking"
+        ]
+        if v not in valid_values:
+            raise ValueError(f"分块策略必须是以下之一: {valid_values}")
+        return v
+
+
+class DataCleaningLevel(BaseModel):
+    """数据清理级别模型"""
+    value: str = Field(..., description="数据清理级别值")
+    
+    @field_validator('value')
+    def validate_cleaning_level(cls, v):
+        valid_values = ["none", "basic", "advanced", "custom"]
+        if v not in valid_values:
+            raise ValueError(f"数据清理级别必须是以下之一: {valid_values}")
+        return v
+
+
+class ChunkingConfig(BaseModel):
+    """分块配置模型 - 支持6个等级的分块策略配置"""
+    
+    # Level 1: Character Splitting 配置
+    character_splitting_config: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Level 1: 字符级分块配置"
+    )
+    
+    # Level 2: Recursive Character Text Splitting 配置
+    recursive_splitting_config: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Level 2: 递归字符分块配置，包含分隔符列表"
+    )
+    
+    # Level 3: Document Specific Splitting 配置
+    document_specific_config: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Level 3: 文档特定分块配置，支持PDF、Python、Markdown等"
+    )
+    
+    # Level 4: Semantic Splitting 配置
+    semantic_splitting_config: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Level 4: 语义分块配置，基于嵌入的分块"
+    )
+    
+    # Level 5: Agentic Splitting 配置
+    agentic_splitting_config: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Level 5: 智能代理分块配置，实验性方法"
+    )
+    
+    # Bonus Level: Alternative Representation Chunking 配置
+    alternative_representation_config: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Bonus Level: 替代表示分块配置，用于检索和索引"
+    )
+
+
+class ModelProcessingConfig(BaseModel):
+    """模型处理配置（可选：开启后由模型进行总结/改写/抽取等）"""
+    enable: bool = Field(default=False, description="是否启用模型处理")
+    prompt: Optional[str] = Field(default=None, description="自定义提示词（用户提示）")
+    system_prompt: Optional[str] = Field(default=None, description="系统提示词（约束角色/风格）")
+    model_name: Optional[str] = Field(default=None, description="模型名称（不填则使用系统默认）")
+    temperature: Optional[float] = Field(default=0.3, ge=0.0, le=2.0, description="采样温度")
+    top_p: Optional[float] = Field(default=1.0, ge=0.0, le=1.0, description="核采样top_p")
+    max_tokens: Optional[int] = Field(default=1024, ge=1, description="最大输出token数")
+
+
+class FileProcessRequest(BaseModel):
+    """文件处理请求模型"""
+    
+    # 必需参数
+    task_id: str = Field(..., description="任务ID，用于跟踪处理进度")
+    purpose: ProcessingPurpose = Field(..., description="读取文件的目的")
+    target_format: OutputFormat = Field(..., description="目标输出格式")
+    content_return_format: ContentReturnFormat = Field(..., description="文件内容的返回格式")
+    
+    # 可选参数
+    table_precision: Optional[TablePrecision] = Field(
+        default=TablePrecision(value=10), 
+        description="读取表格的精度"
+    )
+    
+    # 分块相关参数
+    enable_chunking: bool = Field(default=False, description="是否启用文本分块")
+    chunking_strategy: Optional[ChunkingStrategy] = Field(
+        default=ChunkingStrategy(value="auto"), 
+        description="分块策略（auto 自动选择）"
+    )
+    chunk_size: Optional[int] = Field(
+        default=1000, 
+        ge=100, 
+        le=10000, 
+        description="分块大小（字符数）"
+    )
+    chunk_overlap: Optional[int] = Field(
+        default=200, 
+        ge=0, 
+        le=1000, 
+        description="分块重叠大小（字符数）"
+    )
+    # 高级分块配置
+    chunking_config: Optional[Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="分块策略的具体配置参数"
+    )
+    
+    # 多文件处理参数
+    enable_multi_file_summary: bool = Field(
+        default=False, 
+        description="是否需要对多文件进行总结"
+    )
+    summary_length: Optional[int] = Field(
+        default=500, 
+        ge=100, 
+        le=2000, 
+        description="总结长度（字符数）"
+    )
+    summary_focus: Optional[List[str]] = Field(
+        default=["main_points", "key_findings"], 
+        description="总结重点关注的方面"
+    )
+    
+    # 数据清理参数
+    enable_data_cleaning: bool = Field(default=False, description="是否启用数据清理")
+    cleaning_level: Optional[DataCleaningLevel] = Field(
+        default=DataCleaningLevel(value="basic"), 
+        description="数据清理级别"
+    )
+    custom_cleaning_rules: Optional[Dict[str, Any]] = Field(
+        default=None, 
+        description="自定义清理规则"
+    )
+    
+    # 高级参数
+    preserve_formatting: bool = Field(
+        default=True, 
+        description="是否保留原始格式"
+    )
+    extract_metadata: bool = Field(
+        default=False, 
+        description="是否提取文件元数据"
+    )
+    include_images: bool = Field(
+        default=False, 
+        description="是否包含图像内容（OCR）"
+    )
+    ocr_confidence_threshold: Optional[float] = Field(
+        default=0.7, 
+        ge=0.0, 
+        le=1.0, 
+        description="OCR置信度阈值"
+    )
+
+    # 模型处理参数（可选）
+    model_processing: ModelProcessingConfig = Field(
+        default_factory=ModelProcessingConfig,
+        description="模型处理配置（开关/提示词/模型参数等）"
+    )
+
+    # 仅针对 summary 的响应控制
+    summary_return_top_k: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="仅当 target_format=summary 时生效：返回前K条要点/段落"
+    )
+    summary_streaming: bool = Field(
+        default=False,
+        description="仅当 target_format=summary 时生效：是否通过SSE流式返回"
+    )
+    streaming_channel: Optional[str] = Field(
+        default="sse",
+        description="流式返回通道，当前固定为sse（预留字段）"
+    )
+    
+    # 自定义参数（灵活扩展）
+    custom_parameters: Optional[Dict[str, Any]] = Field(
+        default_factory=dict, 
+        description="自定义参数，可以接收任何额外的参数"
+    )
+    
+    # 验证器
+    @field_validator('purpose', 'target_format', 'content_return_format', 'cleaning_level', 'chunking_strategy', mode='before')
+    def coerce_value_models(cls, v):
+        # 兼容纯字符串写法：自动包裹为 {"value": v}
+        if isinstance(v, str):
+            return {"value": v}
+        return v
+
+    @field_validator('table_precision', mode='before')
+    def coerce_table_precision(cls, v):
+        # 支持纯数值写法：自动包裹为 {"value": v}
+        if isinstance(v, int):
+            return {"value": v}
+        return v
+
+    @model_validator(mode='after')
+    def validate_chunk_parameters(self):
+        if self.chunk_size is not None and self.chunk_overlap is not None:
+            if self.chunk_overlap >= self.chunk_size:
+                raise ValueError("分块重叠大小不能大于或等于分块大小")
+        return self
+    
+    @field_validator('custom_parameters')
+    def validate_custom_parameters(cls, v):
+        # 确保自定义参数可以被JSON序列化
+        try:
+            json.dumps(v)
+        except (TypeError, ValueError):
+            raise ValueError("自定义参数必须是可以JSON序列化的")
+        return v
+
+
+class ProcessingOptions(BaseModel):
+    """处理选项的详细配置"""
+    
+    # 输出选项
+    output_options: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="输出格式的具体选项"
+    )
+    
+    # 分块选项
+    chunking_options: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="分块的具体配置选项"
+    )
+    
+    # 清理选项
+    cleaning_options: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="数据清理的具体配置选项"
+    )
+    
+    # 总结选项
+    summary_options: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="多文件总结的具体配置选项"
+    )
+
+
+class FileProcessResponse(BaseModel):
+    """文件处理响应模型"""
+    
+    task_id: str = Field(..., description="任务ID")
+    status: str = Field(..., description="处理状态: pending/processing/completed/failed")
+    progress: Optional[float] = Field(None, ge=0.0, le=100.0, description="处理进度百分比")
+    
+    # 处理结果
+    result_url: Optional[str] = Field(None, description="结果文件下载URL")
+    result_data: Optional[Dict[str, Any]] = Field(None, description="直接返回的结果数据")
+    
+    # 元数据
+    processing_time: Optional[float] = Field(None, description="处理耗时（秒）")
+    file_info: Optional[Dict[str, Any]] = Field(None, description="文件信息")
+    
+    # 错误信息
+    error_message: Optional[str] = Field(None, description="错误信息（如果处理失败）")
+    error_details: Optional[Dict[str, Any]] = Field(None, description="详细错误信息")
+
+
+class BatchProcessRequest(BaseModel):
+    """批量处理请求模型"""
+    
+    task_id: str = Field(..., description="批量任务ID")
+    files: List[str] = Field(..., description="文件路径列表")
+    process_config: FileProcessRequest = Field(..., description="处理配置")
+    
+    # 批量处理特有选项
+    parallel_processing: bool = Field(default=True, description="是否并行处理")
+    max_workers: Optional[int] = Field(default=4, ge=1, le=10, description="最大并行工作数")
+    
+    # 批量总结选项
+    batch_summary: bool = Field(default=False, description="是否生成批量总结")
+    summary_format: Optional[str] = Field(default="markdown", description="总结格式")
+
+
+# 示例JSON结构
+EXAMPLE_REQUEST = {
+    "task_id": "task_20241201_001",
+    "purpose": {"value": "content_reading"},
+    "target_format": {"value": "markdown"},
+    "content_return_format": {"value": "structured"},
+    "table_precision": {"value": 15},
+    "enable_chunking": True,
+    "chunking_strategy": {"value": "auto"},
+    "chunk_size": 1500,
+    "chunk_overlap": 200,
+    "chunking_config": {
+        "semantic_splitting_config": {
+            "embedding_model": "text-embedding-ada-002",
+            "similarity_threshold": 0.8,
+            "min_chunk_size": 100,
+            "max_chunk_size": 2000
+        }
+    },
+    "enable_multi_file_summary": True,
+    "summary_length": 800,
+    "summary_focus": ["main_points", "key_findings", "recommendations"],
+    "enable_data_cleaning": True,
+    "cleaning_level": {"value": "advanced"},
+    "preserve_formatting": True,
+    "extract_metadata": True,
+    "include_images": True,
+    "ocr_confidence_threshold": 0.8,
+    "model_processing": {
+        "enable": True,
+        "prompt": "请用5条要点总结本文档的关键信息",
+        "model_name": "gpt-4o-mini",
+        "temperature": 0.3,
+        "max_tokens": 512
+    }
+} 

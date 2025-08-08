@@ -57,10 +57,25 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     TASK_TIMEOUT: int = 300  # 5分钟
     
-
     # 日志设置
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/app.log"
+    
+    # Qwen3 API设置
+    QWEN3_API_KEY: str = os.getenv("QWEN3_API_KEY", "")
+    QWEN3_MODEL_NAME: str = os.getenv("QWEN3_MODEL_NAME", "")
+    QWEN3_BASE_URL: str = os.getenv("QWEN3_BASE_URL", "")
+    
+    # 向量模型设置
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "")
+    EMBEDDING_MODEL_URL: str = os.getenv("EMBEDDING_MODEL_URL", "")
+    EMBEDDING_MODEL_API_KEY: str = os.getenv("EMBEDDING_MODEL_API_KEY", "")
+
+    # API设置
+    api_key: str = os.getenv("API_KEY", "your-api-key")
+    
+    # OFD API设置
+    ofd_api_url: str = os.getenv("OFD_API_URL", "")
     
     class Config:
         env_file = ".env"

@@ -2,15 +2,15 @@
 # File Reading System Dependencies
 
 # Web框架
-fastapi
-uvicorn
-python-multipart
+fastapi           # Web框架
+uvicorn           # ASGI服务器
+python-multipart  # 多部分表单数据处理
 
 # 数据处理
-pandas
-numpy
-pydantic
-pydantic-settings
+pandas            # 数据处理
+numpy             # 科学计算
+pydantic          # 数据验证
+pydantic-settings # 配置管理
 
 # 文件处理
 markitdown       # 文件转markdown处理
@@ -31,16 +31,16 @@ nltk             # 自然语言工具包
 
 
 # 任务队列
-celery            # 分布式任务队列
-redis             # Redis客户端
+celery           # 分布式任务队列
+redis            # Redis客户端
 
 # 数据库
 sqlalchemy       # ORM
 alembic          # 数据库迁移
-psycopg2-binary   # PostgreSQL适配器
+psycopg2-binary  # PostgreSQL适配器
 
 # 系统监控
-psutil            # 系统性能监控
+psutil           # 系统性能监控
 
 # 开发工具
 pytest           # 测试框架
@@ -54,17 +54,20 @@ mypy             # 类型检查
 python-dotenv    # 环境变量管理
 
 # 文档生成
-mkdocs          # 文档生成
+mkdocs           # 文档生成
 mkdocs-material  # 文档主题
 
 # 安全相关
-cryptography    # 加密库
-passlib         # 密码处理
+cryptography     # 加密库
+passlib          # 密码处理
 
 # 日志处理
-structlog       # 结构化日志
+structlog        # 结构化日志
 
 # 其他工具
-python-magic    # 文件类型检测
-tqdm            # 进度条
-requests        # HTTP请求
+python-magic     # 文件类型检测
+tqdm             # 进度条
+requests         # HTTP请求
+
+#AI相关
+openai           # OpenAI

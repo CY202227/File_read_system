@@ -6,6 +6,7 @@ File Reading System Main Entry Point
 """
 
 import uvicorn
+import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -19,7 +20,29 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from app.api.routes import file_upload, file_process, health, task_management
 from app.core.exceptions import setup_exception_handlers
 from config.settings import settings
-from config.logging_config import setup_logging
+from config.logging_config import setup_logging, get_logger
+from app.core.task_manager import task_manager
+
+
+async def _periodic_cleanup_task(stop_event: asyncio.Event) -> None:
+    """后台定时清理任务：每24小时执行一次，删除一周前完成任务的源文件。"""
+    logger = get_logger(__name__)
+    interval_seconds = 24 * 60 * 60 * 7  # 每周
+    while not stop_event.is_set():
+        try:
+            result = task_manager.cleanup_uploaded_sources(older_than_days=7)
+            logger.info(
+                "weekly_cleanup result: tasks_scanned=%s tasks_matched=%s files_deleted=%s",
+                result.get("tasks_scanned"),
+                result.get("tasks_matched"),
+                result.get("files_deleted"),
+            )
+        except Exception as e:
+            logger.exception("weekly_cleanup error: %s", e)
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+        except asyncio.TimeoutError:
+            continue
 
 
 @asynccontextmanager
@@ -36,7 +59,18 @@ async def lifespan(app: FastAPI):
     print("📁 目录结构初始化完成")
     print(f"🌐 服务将在 http://localhost:{settings.PORT} 启动")
     
+    # 启动后台定时清理任务
+    stop_event = asyncio.Event()
+    cleanup_task = asyncio.create_task(_periodic_cleanup_task(stop_event))
+
     yield
+
+    # 关闭时停止后台任务
+    stop_event.set()
+    try:
+        await asyncio.wait_for(cleanup_task, timeout=5)
+    except Exception:
+        cleanup_task.cancel()
     
     # 关闭时的清理
     print("🛑 文件阅读系统正在关闭...")

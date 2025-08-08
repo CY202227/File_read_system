@@ -6,6 +6,7 @@ Task Manager for managing task IDs, states and queues
 import uuid
 import time
 import os
+import json
 from typing import Dict, Optional, List, Any
 from datetime import datetime, timedelta
 from enum import Enum
@@ -38,26 +39,155 @@ class TaskManager:
     """任务管理器类"""
     
     def __init__(self):
-        # 内存中的任务存储（临时，后续会迁移到数据库）
-        self._tasks: Dict[str, Dict] = {}
-        self._task_locks: Dict[str, threading.Lock] = {}
-        self._global_lock = threading.Lock()
-        
-        # 任务队列管理
-        self._pending_queue = PriorityQueue()
-        self._active_tasks: Dict[str, Dict] = {}
-        self._completed_tasks: Dict[str, Dict] = {}
-        
-        # 配置
+        # 配置（存储完全基于JSON文件，不使用内存存储）
         self._max_concurrent_tasks = 10
         self._task_timeout = 3600  # 1小时超时
         self._cleanup_interval = 300  # 5分钟清理一次
         self._last_cleanup = time.time()
         self._uploads_dir = "uploads"  # 上传目录
+        self._temp_dir = Path("temp")  # temp目录
         
-        # 数据库预留接口（注释形式）
-        # self._db_connection = None  # 数据库连接
-        # self._db_table_name = "tasks"  # 任务表名
+        # 确保temp目录存在
+        self._temp_dir.mkdir(exist_ok=True)
+
+    # ---------------- 文件队列/并发（基于JSON） ----------------
+    def _count_active_from_fs(self) -> int:
+        """统计当前active/processing任务数量（读取JSON文件）。"""
+        count = 0
+        for p in self._temp_dir.glob("*.json"):
+            try:
+                obj = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            status = obj.get("status")
+            if status in {TaskStatus.ACTIVE.value, TaskStatus.PROCESSING.value}:
+                count += 1
+        return count
+
+    def _decide_initial_status_fs(self) -> str:
+        """根据并发上限返回初始状态（active 或 pending）。"""
+        return (
+            TaskStatus.ACTIVE.value
+            if self._count_active_from_fs() < self._max_concurrent_tasks
+            else TaskStatus.PENDING.value
+        )
+
+    # ---------------- JSON 驱动的创建/更新/查询 ----------------
+    def create_task_from_request(self, task_id: str, request_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """创建任务JSON，保存完整入参到文件系统（队列采用JSON管理）。
+
+        TODO: 后续保留对接数据库的实现（落库与回放）。
+        """
+        doc: Dict[str, Any] = {
+            "task_id": task_id,
+            "status": self._decide_initial_status_fs(),
+            "queue": "json",
+            "max_concurrency": self._max_concurrent_tasks,
+            "request": request_dict,
+            "progress": {"percent": 0.0},
+            "result": {"url": None, "data": None},
+            "sections": {
+                "upload_file_json": {},
+                "process_json": {},
+            },
+            "events": [],
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+            "started_at": None,
+            "completed_at": None,
+            "errors": None,
+        }
+        self._save_task_to_json(task_id, doc)
+        return doc
+
+    def update_section(self, task_id: str, section: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """更新指定分段（如 upload_file_json）并保存到JSON。"""
+        doc = self._load_task_from_json(task_id)
+        sections = doc.get("sections") or {}
+        current = sections.get(section) or {}
+        if not isinstance(current, dict):
+            current = {}
+        current.update(payload)
+        sections[section] = current
+        doc["sections"] = sections
+        doc["updated_at"] = datetime.now()
+        self._save_task_to_json(task_id, doc)
+        return doc
+
+    def append_event(self, task_id: str, event: Dict[str, Any]) -> Dict[str, Any]:
+        """附加一条事件（供调试或SSE）。"""
+        doc = self._load_task_from_json(task_id)
+        events = doc.get("events") or []
+        event = {
+            **event,
+            "time": datetime.now().isoformat(),
+            "seq": len(events) + 1,
+        }
+        events.append(event)
+        doc["events"] = events
+        doc["updated_at"] = datetime.now()
+        self._save_task_to_json(task_id, doc)
+        return doc
+
+    def get_status_from_json(self, task_id: str) -> Dict[str, Any]:
+        """读取任务JSON并返回 FileProcessResponse 兼容结构。"""
+        doc = self._load_task_from_json(task_id)
+        result = doc.get("result") or {}
+        sections = doc.get("sections") or {}
+        return {
+            "task_id": doc.get("task_id"),
+            "status": doc.get("status"),
+            "progress": (doc.get("progress") or {}).get("percent"),
+            "result_url": result.get("url"),
+            "result_data": result.get("data"),
+            "processing_time": None,  # TODO: 由处理流程写入耗时
+            "file_info": sections.get("upload_file_json"),
+            "error_message": (doc.get("errors") or {}).get("message") if doc.get("errors") else None,
+            "error_details": doc.get("errors"),
+        }
+    
+    def _get_task_json_path(self, task_id: str) -> Path:
+        """获取任务JSON文件路径"""
+        return self._temp_dir / f"{task_id}.json"
+    
+    def _save_task_to_json(self, task_id: str, task_info: Dict) -> None:
+        """保存任务信息到JSON文件"""
+        json_path = self._get_task_json_path(task_id)
+        
+        try:
+            # 转换datetime对象为字符串
+            task_data = task_info.copy()
+            for key, value in task_data.items():
+                if isinstance(value, datetime):
+                    task_data[key] = value.isoformat()
+            
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(task_data, f, ensure_ascii=False, indent=2, default=str)
+        except IOError as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"保存任务文件失败: {str(e)}"
+            )
+    
+    def _load_task_from_json(self, task_id: str) -> Dict:
+        """从JSON文件加载任务信息"""
+        json_path = self._get_task_json_path(task_id)
+        
+        if not json_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"任务不存在: {task_id}"
+            )
+        
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                task_data = json.load(f)
+            return task_data
+        except (json.JSONDecodeError, IOError) as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"读取任务文件失败: {str(e)}"
+            )
     
     def _check_task_exists_in_filesystem(self, task_id: str) -> bool:
         """
@@ -69,8 +199,8 @@ class TaskManager:
         Returns:
             bool: 任务是否存在
         """
-        task_dir = Path(self._uploads_dir) / task_id
-        return task_dir.exists() and task_dir.is_dir()
+        json_path = self._get_task_json_path(task_id)
+        return json_path.exists()
     
     def _check_task_exists_in_db(self, task_id: str) -> bool:
         """
@@ -99,47 +229,45 @@ class TaskManager:
         Returns:
             str: 任务ID
         """
-        with self._global_lock:
-            if task_id is None:
-                task_id = str(uuid.uuid4())
-            
-            # 检查任务ID是否已存在（在内存中或文件系统中）
-            if task_id in self._tasks or self._check_task_exists_in_filesystem(task_id):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"任务ID已存在: {task_id}"
-                )
-            
-            # 创建新任务
-            task_info = {
-                "task_id": task_id,
-                "status": TaskStatus.CREATED.value,
-                "priority": priority.value,
-                "created_at": datetime.now(),
-                "updated_at": datetime.now(),
-                "started_at": None,
-                "completed_at": None,
-                "files": [],
-                "file_count": 0,
-                "successful_uploads": 0,
-                "failed_uploads": 0,
-                "total_size": 0,
-                "error_message": None,
-                "metadata": metadata or {},
-                "retry_count": 0,
-                "max_retries": 3
-            }
-            
-            self._tasks[task_id] = task_info
-            self._task_locks[task_id] = threading.Lock()
-            
-            # 添加到待处理队列
-            self._pending_queue.put((priority.value, time.time(), task_id))
-            
-            # TODO: 保存到数据库
-            # self._save_task_to_db(task_info)
-            
-            return task_id
+        if task_id is None:
+            task_id = str(uuid.uuid4())
+
+        # 检查任务ID是否已存在（文件系统或数据库）
+        if self._check_task_exists_in_filesystem(task_id):
+            raise HTTPException(status_code=400, detail=f"任务ID已存在: {task_id}")
+        if self._check_task_exists_in_db(task_id):
+            raise HTTPException(status_code=400, detail=f"任务ID已存在(数据库): {task_id}")
+
+        # 创建新任务（文件）
+        initial_status = self._decide_initial_status_fs()
+        task_info = {
+            "task_id": task_id,
+            "status": initial_status,
+            "priority": priority.value,
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+            "started_at": None,
+            "completed_at": None,
+            "files": [],
+            "file_count": 0,
+            "successful_uploads": 0,
+            "failed_uploads": 0,
+            "total_size": 0,
+            "error_message": None,
+            "metadata": metadata or {},
+            "retry_count": 0,
+            "max_retries": 3,
+            "sections": {
+                "upload_file_json": {},
+                "process_json": {},
+            },
+            "result": {"url": None, "data": None},
+            "progress": {"percent": 0.0},
+            "events": [],
+        }
+
+        self._save_task_to_json(task_id, task_info)
+        return task_id
     
     def validate_task(self, task_id: str) -> bool:
         """
@@ -151,23 +279,16 @@ class TaskManager:
         Returns:
             bool: 任务是否存在且有效
         """
-        # 首先检查内存中的任务
-        with self._global_lock:
-            if task_id in self._tasks:
-                task = self._tasks[task_id]
-                # 检查任务是否已过期
-                if task["status"] in [TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value]:
-                    return False
-                
-                # 检查任务是否超时
-                if task["started_at"] and (datetime.now() - task["started_at"]).total_seconds() > self._task_timeout:
-                    return False
-                
-                return True
-        
-        # 如果内存中没有，检查文件系统
+        # 仅检查文件系统（不使用内存）
         if self._check_task_exists_in_filesystem(task_id):
-            return True
+            try:
+                task_data = self._load_task_from_json(task_id)
+                # 检查任务是否已过期
+                if task_data.get("status") in [TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value]:
+                    return False
+                return True
+            except:
+                return False
         
         # 最后检查数据库（预留）
         if self._check_task_exists_in_db(task_id):
@@ -188,25 +309,9 @@ class TaskManager:
         Raises:
             HTTPException: 任务不存在
         """
-        with self._global_lock:
-            if task_id not in self._tasks:
-                # 如果内存中没有，尝试从文件系统加载
-                if self._check_task_exists_in_filesystem(task_id):
-                    # TODO: 从文件系统或数据库加载任务信息
-                    # task_info = self._load_task_from_filesystem(task_id)
-                    # self._tasks[task_id] = task_info
-                    # return task_info.copy()
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"任务存在但信息不完整: {task_id}"
-                    )
-                else:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"任务不存在: {task_id}"
-                    )
-            
-            return self._tasks[task_id].copy()
+        if self._check_task_exists_in_filesystem(task_id):
+            return self._load_task_from_json(task_id)
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
     
     def update_task_status(self, task_id: str, status: TaskStatus, **kwargs) -> None:
         """
@@ -227,35 +332,24 @@ class TaskManager:
                 detail="任务ID不能为空"
             )
         
-        with self._global_lock:
-            if task_id not in self._tasks:
-                # 如果内存中没有，尝试从文件系统加载
-                if self._check_task_exists_in_filesystem(task_id):
-                    # TODO: 从文件系统或数据库加载任务信息
-                    # task_info = self._load_task_from_filesystem(task_id)
-                    # self._tasks[task_id] = task_info
-                    pass
-                else:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"任务不存在: {task_id}"
-                    )
-            
-            task = self._tasks[task_id]
-            task["status"] = status.value
-            task["updated_at"] = datetime.now()
-            
-            # 根据状态更新相应字段
-            if status == TaskStatus.ACTIVE:
-                task["started_at"] = datetime.now()
-            elif status in [TaskStatus.COMPLETED, TaskStatus.FAILED]:
-                task["completed_at"] = datetime.now()
-            
-            # 更新其他字段
-            task.update(kwargs)
-            
-            # TODO: 更新数据库
-            # self._update_task_in_db(task_id, task)
+        if not self._check_task_exists_in_filesystem(task_id):
+            raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+
+        task = self._load_task_from_json(task_id)
+        task["status"] = status.value
+        task["updated_at"] = datetime.now()
+
+        # 根据状态更新相应字段
+        if status == TaskStatus.ACTIVE:
+            task["started_at"] = datetime.now()
+        elif status in [TaskStatus.COMPLETED, TaskStatus.FAILED]:
+            task["completed_at"] = datetime.now()
+
+        # 更新其他字段
+        task.update(kwargs)
+
+        # 保存到JSON文件
+        self._save_task_to_json(task_id, task)
     
     def add_file_to_task(self, task_id: str, file_info: Dict) -> None:
         """
@@ -275,34 +369,21 @@ class TaskManager:
                 detail="任务ID不能为空"
             )
         
-        with self._task_locks.get(task_id, self._global_lock):
-            if task_id not in self._tasks:
-                # 如果内存中没有，尝试从文件系统加载
-                if self._check_task_exists_in_filesystem(task_id):
-                    # TODO: 从文件系统或数据库加载任务信息
-                    # task_info = self._load_task_from_filesystem(task_id)
-                    # self._tasks[task_id] = task_info
-                    pass
-                else:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"任务不存在: {task_id}"
-                    )
-            
-            task = self._tasks[task_id]
-            task["files"].append(file_info)
-            task["file_count"] = len(task["files"])
-            task["updated_at"] = datetime.now()
-            
-            # 更新统计信息
-            if file_info.get("status") == "success":
-                task["successful_uploads"] += 1
-                task["total_size"] += file_info.get("file_size", 0)
-            else:
-                task["failed_uploads"] += 1
-            
-            # TODO: 更新数据库
-            # self._update_task_in_db(task_id, task)
+        if not self._check_task_exists_in_filesystem(task_id):
+            raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+
+        task = self._load_task_from_json(task_id)
+        task.setdefault("files", []).append(file_info)
+        task["file_count"] = len(task["files"])
+        task["updated_at"] = datetime.now()
+
+        if file_info.get("status") == "success":
+            task["successful_uploads"] = task.get("successful_uploads", 0) + 1
+            task["total_size"] = task.get("total_size", 0) + file_info.get("file_size", 0)
+        else:
+            task["failed_uploads"] = task.get("failed_uploads", 0) + 1
+
+        self._save_task_to_json(task_id, task)
     
     def get_next_pending_task(self) -> Optional[str]:
         """
@@ -311,26 +392,17 @@ class TaskManager:
         Returns:
             Optional[str]: 任务ID，如果没有则返回None
         """
-        with self._global_lock:
-            if self._pending_queue.empty():
-                return None
-            
-            # 检查是否有可用的处理槽
-            if len(self._active_tasks) >= self._max_concurrent_tasks:
-                return None
-            
+        # 基于文件系统：若可用并发槽存在，则返回任意一个 pending 任务ID
+        if self._count_active_from_fs() >= self._max_concurrent_tasks:
+            return None
+        for p in sorted(self._temp_dir.glob("*.json")):
             try:
-                priority, timestamp, task_id = self._pending_queue.get_nowait()
-                
-                # 验证任务是否仍然有效
-                if task_id in self._tasks and self._tasks[task_id]["status"] == TaskStatus.CREATED.value:
-                    return task_id
-                else:
-                    # 任务已失效，继续获取下一个
-                    return self.get_next_pending_task()
-                    
-            except:
-                return None
+                obj = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if obj.get("status") in {TaskStatus.PENDING.value, TaskStatus.CREATED.value}:
+                return obj.get("task_id")
+        return None
     
     def start_task(self, task_id: str) -> bool:
         """
@@ -342,29 +414,18 @@ class TaskManager:
         Returns:
             bool: 是否成功启动
         """
-        with self._global_lock:
-            if task_id not in self._tasks:
-                return False
-            
-            task = self._tasks[task_id]
-            if task["status"] != TaskStatus.CREATED.value:
-                return False
-            
-            # 检查是否超过最大并发数
-            if len(self._active_tasks) >= self._max_concurrent_tasks:
-                return False
-            
-            # 启动任务
-            task["status"] = TaskStatus.ACTIVE.value
-            task["started_at"] = datetime.now()
-            task["updated_at"] = datetime.now()
-            
-            self._active_tasks[task_id] = task
-            
-            # TODO: 更新数据库
-            # self._update_task_in_db(task_id, task)
-            
-            return True
+        if not self._check_task_exists_in_filesystem(task_id):
+            return False
+        if self._count_active_from_fs() >= self._max_concurrent_tasks:
+            return False
+        task = self._load_task_from_json(task_id)
+        if task.get("status") not in {TaskStatus.CREATED.value, TaskStatus.PENDING.value}:
+            return False
+        task["status"] = TaskStatus.ACTIVE.value
+        task["started_at"] = datetime.now()
+        task["updated_at"] = datetime.now()
+        self._save_task_to_json(task_id, task)
+        return True
     
     def complete_task(self, task_id: str, success: bool = True, error_message: Optional[str] = None) -> None:
         """
@@ -375,27 +436,17 @@ class TaskManager:
             success: 是否成功
             error_message: 错误信息
         """
-        with self._global_lock:
-            if task_id not in self._tasks:
-                return
-            
-            task = self._tasks[task_id]
-            task["status"] = TaskStatus.COMPLETED.value if success else TaskStatus.FAILED.value
-            task["completed_at"] = datetime.now()
-            task["updated_at"] = datetime.now()
-            
-            if error_message:
-                task["error_message"] = error_message
-            
-            # 从活跃任务中移除
-            if task_id in self._active_tasks:
-                del self._active_tasks[task_id]
-            
-            # 添加到已完成任务
-            self._completed_tasks[task_id] = task
-            
-            # TODO: 更新数据库
-            # self._update_task_in_db(task_id, task)
+        if not self._check_task_exists_in_filesystem(task_id):
+            return
+        task = self._load_task_from_json(task_id)
+        task["status"] = TaskStatus.COMPLETED.value if success else TaskStatus.FAILED.value
+        task["completed_at"] = datetime.now()
+        task["updated_at"] = datetime.now()
+        if error_message:
+            task["error_message"] = error_message
+
+        # 按新策略：不在完成时删除上传原文件，保留结果 JSON
+        self._save_task_to_json(task_id, task)
     
     def cancel_task(self, task_id: str) -> bool:
         """
@@ -407,25 +458,15 @@ class TaskManager:
         Returns:
             bool: 是否成功取消
         """
-        with self._global_lock:
-            if task_id not in self._tasks:
-                return False
-            
-            task = self._tasks[task_id]
-            if task["status"] in [TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value]:
-                return False
-            
-            task["status"] = TaskStatus.CANCELLED.value
-            task["updated_at"] = datetime.now()
-            
-            # 从活跃任务中移除
-            if task_id in self._active_tasks:
-                del self._active_tasks[task_id]
-            
-            # TODO: 更新数据库
-            # self._update_task_in_db(task_id, task)
-            
-            return True
+        if not self._check_task_exists_in_filesystem(task_id):
+            return False
+        task = self._load_task_from_json(task_id)
+        if task.get("status") in [TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value]:
+            return False
+        task["status"] = TaskStatus.CANCELLED.value
+        task["updated_at"] = datetime.now()
+        self._save_task_to_json(task_id, task)
+        return True
     
     def list_tasks(self, status: Optional[TaskStatus] = None, limit: int = 100) -> List[Dict]:
         """
@@ -438,16 +479,22 @@ class TaskManager:
         Returns:
             List[Dict]: 任务列表
         """
-        with self._global_lock:
-            tasks = []
-            for task_id, task_info in self._tasks.items():
-                if status is None or task_info["status"] == status.value:
-                    tasks.append(task_info.copy())
-            
-            # 按创建时间排序
-            tasks.sort(key=lambda x: x["created_at"], reverse=True)
-            
-            return tasks[:limit]
+        tasks: List[Dict] = []
+        for p in self._temp_dir.glob("*.json"):
+            try:
+                obj = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if status is None or obj.get("status") == status.value:
+                tasks.append(obj)
+        # 按 created_at 排序
+        def _created_at(o: Dict):
+            v = o.get("created_at")
+            if isinstance(v, str):
+                return v
+            return ""
+        tasks.sort(key=_created_at, reverse=True)
+        return tasks[:limit]
     
     def get_queue_status(self) -> Dict:
         """
@@ -456,49 +503,86 @@ class TaskManager:
         Returns:
             Dict: 队列状态信息
         """
-        with self._global_lock:
-            return {
-                "pending_count": self._pending_queue.qsize(),
-                "active_count": len(self._active_tasks),
-                "completed_count": len(self._completed_tasks),
-                "max_concurrent": self._max_concurrent_tasks,
-                "total_tasks": len(self._tasks)
-            }
+        pending = 0
+        active = 0
+        completed = 0
+        total = 0
+        for p in self._temp_dir.glob("*.json"):
+            try:
+                obj = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            total += 1
+            s = obj.get("status")
+            if s == TaskStatus.PENDING.value or s == TaskStatus.CREATED.value:
+                pending += 1
+            elif s == TaskStatus.ACTIVE.value or s == TaskStatus.PROCESSING.value:
+                active += 1
+            elif s == TaskStatus.COMPLETED.value:
+                completed += 1
+        return {
+            "pending_count": pending,
+            "active_count": active,
+            "completed_count": completed,
+            "max_concurrent": self._max_concurrent_tasks,
+            "total_tasks": total,
+        }
     
     def cleanup_expired_tasks(self) -> int:
         """
-        清理过期的任务
-        
-        Returns:
-            int: 清理的任务数量
+        无需定期清理任务文件。按需返回 0。
+        （根据当前需求：任务完成后仅删除上传的原文件，保留结果 JSON。）
         """
-        current_time = time.time()
-        
-        # 检查是否需要清理
-        if current_time - self._last_cleanup < self._cleanup_interval:
-            return 0
-        
-        with self._global_lock:
-            expired_tasks = []
-            cutoff_time = datetime.now() - timedelta(seconds=self._task_timeout)
-            
-            for task_id, task_info in self._tasks.items():
-                # 清理已完成且超过24小时的任务
-                if (task_info["status"] in [TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value] and
-                    task_info["completed_at"] and 
-                    task_info["completed_at"] < cutoff_time):
-                    expired_tasks.append(task_id)
-            
-            # 删除过期任务
-            for task_id in expired_tasks:
-                del self._tasks[task_id]
-                if task_id in self._task_locks:
-                    del self._task_locks[task_id]
-                if task_id in self._completed_tasks:
-                    del self._completed_tasks[task_id]
-            
-            self._last_cleanup = current_time
-            return len(expired_tasks)
+        return 0
+
+    def cleanup_uploaded_sources(self, older_than_days: int = 7) -> Dict[str, int]:
+        """
+        每周（或指定天数）扫描一次：对已完成且完成时间早于指定天数的任务，
+        删除上传的源文件，但不删除任务结果的 JSON 文件。
+
+        Args:
+            older_than_days: 判定为“过期”上传源文件的天数阈值（默认7天）
+
+        Returns:
+            {"tasks_scanned": x, "tasks_matched": y, "files_deleted": z}
+        """
+        tasks_scanned = 0
+        tasks_matched = 0
+        files_deleted = 0
+
+        cutoff = datetime.now() - timedelta(days=older_than_days)
+        for p in self._temp_dir.glob("*.json"):
+            tasks_scanned += 1
+            try:
+                obj = self._load_task_from_json(p.stem)
+            except Exception:
+                continue
+
+            if obj.get("status") != TaskStatus.COMPLETED.value:
+                continue
+
+            completed_at = obj.get("completed_at")
+            try:
+                completed_dt = datetime.fromisoformat(completed_at) if completed_at else None
+            except Exception:
+                completed_dt = None
+
+            if completed_dt and completed_dt < cutoff:
+                tasks_matched += 1
+                files = obj.get("files", []) or []
+                for info in files:
+                    try:
+                        file_path = info.get("file_path") if isinstance(info, dict) else None
+                        if not file_path:
+                            continue
+                        fp = Path(file_path)
+                        if fp.exists() and fp.is_file():
+                            fp.unlink()
+                            files_deleted += 1
+                    except Exception:
+                        pass
+
+        return {"tasks_scanned": tasks_scanned, "tasks_matched": tasks_matched, "files_deleted": files_deleted}
     
     # TODO: 数据库相关方法（预留接口）
     """

@@ -8,102 +8,43 @@
 
 ```
 file_read_system/
-├── app/                    # 主应用代码
-│   ├── api/               # API 接口层
-│   │   ├── __init__.py
-│   │   ├── routes/        # 路由定义
-│   │   ├── middleware/    # 中间件
-│   │   └── schemas/       # API 数据模型/验证
-│   │
-│   ├── core/              # 核心业务逻辑
-│   │   ├── __init__.py
-│   │   ├── file_manager.py    # 文件管理器
-│   │   ├── task_manager.py     # 任务管理
-│   │   └── exceptions.py      # 自定义异常
-│   │
-│   ├── parsers/           # 文件解析器
-│   │   ├── __init__.py
-│   │   ├── base_parser.py     # 解析器基类
-│   │   ├── text_parser.py     # 文本文件解析 (.txt, .md, .csv)
-│   │   ├── office_parser.py   # Office 文件解析 (.docx, .xlsx, .pptx)
-│   │   ├── pdf_parser.py      # PDF 文件解析
-│   │   ├── image_parser.py    # 图像文件解析 (调用OCR模块)
-│   │   ├── code_parser.py     # 代码文件解析
-│   │   └── binary_parser.py   # 二进制文件解析
-│   │
-│   ├── ocr/               # OCR 光学字符识别模块
-│   │   ├── __init__.py
-│   │   ├── base_ocr.py        # OCR 引擎基类
-│   │   ├── preprocessor.py    # 图像预处理
-│   │   └── postprocessor.py   # OCR 结果后处理
-│   │
-│   ├── processors/        # 数据处理器
-│   │   ├── __init__.py
-│   │   ├── base_processor.py  # 处理器基类
-│   │   ├── chunker.py         # 普通文本分块处理
-│   │   ├── analyzer.py        # 内容分析
-│   │   ├── cleaner.py         # 数据清洗
-│   │   └── transformer.py     # 数据转换
-│   │
-│   ├── vectorization/     # 向量化相关处理模块
-│   │   ├── __init__.py
-│   │   ├── semantic_chunker.py   # 语义分块器
-│   │   ├── chunk_optimizer.py    # 分块优化器
-│   │   ├── embedding_prep.py     # 向量化预处理
-│   │   ├── chunk_strategies.py   # 分块策略集合
-│   │   └── chunk_evaluator.py    # 分块质量评估
-│   │
-│   ├── outputs/           # 输出格式处理
-│   │   ├── __init__.py
-│   │   ├── base_output.py     # 输出器基类
-│   │   ├── markdown_output.py # Markdown 格式输出
-│   │   ├── dataframe_output.py # DataFrame 格式输出
-│   │   ├── json_output.py     # JSON 格式输出
-│   │   ├── excel_output.py    # Excel 格式输出
-│   │   └── custom_output.py   # 自定义格式输出
-│   │
-│   └── utils/             # 工具函数
-│       ├── __init__.py
-│       ├── file_utils.py      # 文件操作工具
-│       ├── validation.py      # 数据验证工具
-│       ├── logging.py         # 日志工具
-│       └── helpers.py         # 通用辅助函数
-│
-├── config/                # 配置文件
-│   ├── __init__.py
-│   ├── settings.py        # 应用设置
-│   ├── database.py        # 数据库配置
-│   └── logging_config.py  # 日志配置
-│
-├── tests/                 # 测试代码
-│   ├── __init__.py
-│   ├── unit/              # 单元测试
-│   │   ├── test_parsers.py
-│   │   ├── test_processors.py
-│   │   └── test_outputs.py
-│   ├── integration/       # 集成测试
-│   │   ├── test_api.py
-│   │   └── test_workflows.py
-│   └── fixtures/          # 测试数据
-│
-├── uploads/               # 用户上传文件存储
-├── temp/                  # 临时文件存储
-├── static/                # 静态资源
-│   ├── css/              # 样式文件
-│   └── js/               # JavaScript 文件
-│
-├── templates/             # 模板文件
-│   ├── index.html
-│   └── result.html
-│
-├── docs/                  # 文档
-│   ├── api.md            # API 文档
-│   └── deployment.md     # 部署文档
-│
-├── requirements.txt       # Python 依赖
-├── Dockerfile            # Docker 配置
-├── docker-compose.yml    # Docker Compose 配置
-└── main.py              # 应用入口
+├── app/
+│   ├── api/
+│   │   ├── routes/
+│   │   │   ├── file_upload.py
+│   │   │   ├── health.py
+│   │   │   └── task_management.py
+│   │   └── schemas/
+│   │       ├── upload.py
+│   │       └── file_process_schemas.py
+│   ├── core/
+│   │   ├── exceptions.py
+│   │   ├── file_manager.py
+│   │   ├── job_manager.py
+│   │   └── task_manager.py
+│   ├── ocr/
+│   │   └── database.py
+│   ├── parsers/
+│   │   └── converters/
+│   │       ├── file_convert.py
+│   │       └── markdown_convert.py
+│   ├── processors/
+│   ├── utils/
+│   │   └── file_utils.py
+│   └── vectorization/
+│       └── __init__.py
+├── config/
+│   ├── logging_config.py
+│   └── settings.py
+├── docs/
+├── logs/
+├── static/
+├── templates/
+├── uploads/
+├── temp/
+├── main.py
+├── run.py
+└── requirements.txt
 ```
 
 ## 🔧 各模块详细说明

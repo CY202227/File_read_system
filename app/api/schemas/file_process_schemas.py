@@ -3,7 +3,7 @@
 File processing related schemas
 """
 
-from typing import Optional, List, Dict, Any, Literal, Union
+from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field
 from pydantic import field_validator, model_validator
 import json
@@ -15,7 +15,7 @@ class ProcessingPurpose(BaseModel):
     
     @field_validator('value')
     def validate_purpose(cls, v):
-        valid_values = ["format_conversion", "content_reading", "both"]
+        valid_values = ["format_conversion", "content_reading"]
         if v not in valid_values:
             raise ValueError(f"处理目的必须是以下之一: {valid_values}")
         return v
@@ -27,21 +27,9 @@ class OutputFormat(BaseModel):
     
     @field_validator('value')
     def validate_format(cls, v):
-        valid_values = ["markdown", "json", "csv", "excel", "dataframe", "text", "chunks", "summary"]
+        valid_values = ["markdown", "json", "csv", "excel", "dataframe", "text", "chunks", "plain_text"]
         if v not in valid_values:
             raise ValueError(f"输出格式必须是以下之一: {valid_values}")
-        return v
-
-
-class ContentReturnFormat(BaseModel):
-    """内容返回格式模型"""
-    value: str = Field(..., description="内容返回格式值")
-    
-    @field_validator('value')
-    def validate_return_format(cls, v):
-        valid_values = ["structured", "plain_text", "mixed", "original"]
-        if v not in valid_values:
-            raise ValueError(f"内容返回格式必须是以下之一: {valid_values}")
         return v
 
 
@@ -95,41 +83,113 @@ class DataCleaningLevel(BaseModel):
         return v
 
 
+class RecursiveSplittingConfig(BaseModel):
+    """Level 2: 递归字符分块配置"""
+    separators: List[str] = Field(
+        default=["\n\n", "\n", ". ", ", ", " "],
+        description="分隔符列表，按序退化分割"
+    )
+    keep_separator: bool = Field(
+        default=True,
+        description="是否保留分隔符到相邻文本"
+    )
+
+
+class DocumentSpecificConfig(BaseModel):
+    """Level 3: 文档特定分块配置"""
+    document_type: Literal["pdf", "markdown", "md", "python", "py", "html"] = Field(
+        ..., description="文档类型"
+    )
+    preserve_headers: bool = Field(default=True, description="是否保留标题（Markdown/HTML）")
+    preserve_code_blocks: bool = Field(default=True, description="是否保留代码块（Markdown/HTML/Python注释块）")
+    preserve_lists: bool = Field(default=True, description="是否保留列表结构（Markdown/HTML）")
+
+
+class SemanticSplittingConfig(BaseModel):
+    """Level 4: 语义分块配置（基于嵌入）"""
+    embedding_model: Optional[str] = Field(
+        default=None, description="覆盖默认嵌入模型名（不填则使用系统配置）"
+    )
+    similarity_threshold: float = Field(
+        default=0.25, ge=0.0, le=1.0, description="相邻块相似度阈值，低于该值将切分"
+    )
+    min_chunk_size: Optional[int] = Field(
+        default=None, ge=1, description="可选：每块最小字符数（不填则使用全局 chunk_size 逻辑）"
+    )
+    max_chunk_size: Optional[int] = Field(
+        default=None, ge=1, description="可选：每块最大字符数（不填则使用全局 chunk_size 逻辑）"
+    )
+
+
+class AgenticSplittingConfig(BaseModel):
+    """Level 5: 智能代理分块配置（实验性）"""
+    llm_model: Optional[str] = Field(default=None, description="覆盖默认文本模型名")
+    chunking_prompt: Optional[str] = Field(
+        default=None, description="自定义分块提示词，不填则使用内置系统提示词"
+    )
+    max_tokens_per_chunk: Optional[int] = Field(
+        default=2048, ge=1, description="单次调用允许的最大 tokens（影响返回 JSON 的容量）"
+    )
+    preserve_context: bool = Field(
+        default=True, description="是否在后处理阶段保留上下文（通过 chunk_overlap 实现）"
+    )
+    enable_thinking: bool = Field(
+        default=False, description="是否启用模型的思考模式（经由 extra_body.chat_template_kwargs 传递）"
+    )
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0, description="生成温度")
+    extra_body: Optional[Dict[str, Any]] = Field(
+        default=None, description="下传给底层聊天接口的 extra_body 扩展"
+    )
+
+
+class AlternativeRepresentationConfig(BaseModel):
+    """Bonus: 替代表示分块配置（衍生表示/索引）"""
+    representation_types: List[str] = Field(
+        default_factory=lambda: ["outline", "code_blocks", "tables"],
+        description="衍生表示类型集合（示例：outline, code_blocks, tables, summary, keywords）",
+    )
+    indexing_strategy: str = Field(default="hybrid", description="索引策略（例如: dense/sparse/hybrid）")
+    retrieval_optimized: bool = Field(default=True, description="是否为检索优化存储这些衍生表示")
+    include_outline: bool = Field(default=True, description="是否抽取大纲（Markdown标题等）")
+    include_code_blocks: bool = Field(default=True, description="是否抽取代码块")
+    include_tables: bool = Field(default=True, description="是否抽取表格")
+
+
 class ChunkingConfig(BaseModel):
     """分块配置模型 - 支持6个等级的分块策略配置"""
-    
+
     # Level 1: Character Splitting 配置
     character_splitting_config: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Level 1: 字符级分块配置"
     )
-    
+
     # Level 2: Recursive Character Text Splitting 配置
-    recursive_splitting_config: Optional[Dict[str, Any]] = Field(
+    recursive_splitting_config: Optional[RecursiveSplittingConfig] = Field(
         default=None,
         description="Level 2: 递归字符分块配置，包含分隔符列表"
     )
-    
+
     # Level 3: Document Specific Splitting 配置
-    document_specific_config: Optional[Dict[str, Any]] = Field(
+    document_specific_config: Optional[DocumentSpecificConfig] = Field(
         default=None,
         description="Level 3: 文档特定分块配置，支持PDF、Python、Markdown等"
     )
-    
+
     # Level 4: Semantic Splitting 配置
-    semantic_splitting_config: Optional[Dict[str, Any]] = Field(
+    semantic_splitting_config: Optional[SemanticSplittingConfig] = Field(
         default=None,
         description="Level 4: 语义分块配置，基于嵌入的分块"
     )
-    
+
     # Level 5: Agentic Splitting 配置
-    agentic_splitting_config: Optional[Dict[str, Any]] = Field(
+    agentic_splitting_config: Optional[AgenticSplittingConfig] = Field(
         default=None,
         description="Level 5: 智能代理分块配置，实验性方法"
     )
-    
+
     # Bonus Level: Alternative Representation Chunking 配置
-    alternative_representation_config: Optional[Dict[str, Any]] = Field(
+    alternative_representation_config: Optional[AlternativeRepresentationConfig] = Field(
         default=None,
         description="Bonus Level: 替代表示分块配置，用于检索和索引"
     )
@@ -153,7 +213,6 @@ class FileProcessRequest(BaseModel):
     task_id: str = Field(..., description="任务ID，用于跟踪处理进度")
     purpose: ProcessingPurpose = Field(..., description="读取文件的目的")
     target_format: OutputFormat = Field(..., description="目标输出格式")
-    content_return_format: ContentReturnFormat = Field(..., description="文件内容的返回格式")
     
     # 可选参数
     table_precision: Optional[TablePrecision] = Field(
@@ -197,8 +256,12 @@ class FileProcessRequest(BaseModel):
         description="总结长度（字符数）"
     )
     summary_focus: Optional[List[str]] = Field(
-        default=["main_points", "key_findings"], 
+        default=["main_points", "key_findings", "recommendations","diy"], 
         description="总结重点关注的方面"
+    )
+    diy_summary_prompt: Optional[str] = Field(
+        default=None, 
+        description="自定义总结提示词"
     )
     
     # 数据清理参数
@@ -224,12 +287,6 @@ class FileProcessRequest(BaseModel):
     include_images: bool = Field(
         default=False, 
         description="是否包含图像内容（OCR）"
-    )
-    ocr_confidence_threshold: Optional[float] = Field(
-        default=0.7, 
-        ge=0.0, 
-        le=1.0, 
-        description="OCR置信度阈值"
     )
 
     # 模型处理参数（可选）
@@ -260,7 +317,7 @@ class FileProcessRequest(BaseModel):
     )
     
     # 验证器
-    @field_validator('purpose', 'target_format', 'content_return_format', 'cleaning_level', 'chunking_strategy', mode='before')
+    @field_validator('purpose', 'target_format', 'cleaning_level', 'chunking_strategy', mode='before')
     def coerce_value_models(cls, v):
         # 兼容纯字符串写法：自动包裹为 {"value": v}
         if isinstance(v, str):
@@ -339,28 +396,11 @@ class FileProcessResponse(BaseModel):
     error_details: Optional[Dict[str, Any]] = Field(None, description="详细错误信息")
 
 
-class BatchProcessRequest(BaseModel):
-    """批量处理请求模型"""
-    
-    task_id: str = Field(..., description="批量任务ID")
-    files: List[str] = Field(..., description="文件路径列表")
-    process_config: FileProcessRequest = Field(..., description="处理配置")
-    
-    # 批量处理特有选项
-    parallel_processing: bool = Field(default=True, description="是否并行处理")
-    max_workers: Optional[int] = Field(default=4, ge=1, le=10, description="最大并行工作数")
-    
-    # 批量总结选项
-    batch_summary: bool = Field(default=False, description="是否生成批量总结")
-    summary_format: Optional[str] = Field(default="markdown", description="总结格式")
-
-
 # 示例JSON结构
 EXAMPLE_REQUEST = {
     "task_id": "task_20241201_001",
     "purpose": {"value": "content_reading"},
     "target_format": {"value": "markdown"},
-    "content_return_format": {"value": "structured"},
     "table_precision": {"value": 15},
     "enable_chunking": True,
     "chunking_strategy": {"value": "auto"},
@@ -376,13 +416,13 @@ EXAMPLE_REQUEST = {
     },
     "enable_multi_file_summary": True,
     "summary_length": 800,
-    "summary_focus": ["main_points", "key_findings", "recommendations"],
+    "summary_focus": ["main_points", "key_findings", "recommendations","diy"],
+    "diy_summary_prompt": "请用5条要点总结本文档的关键信息",
     "enable_data_cleaning": True,
     "cleaning_level": {"value": "advanced"},
     "preserve_formatting": True,
     "extract_metadata": True,
     "include_images": True,
-    "ocr_confidence_threshold": 0.8,
     "model_processing": {
         "enable": True,
         "prompt": "请用5条要点总结本文档的关键信息",

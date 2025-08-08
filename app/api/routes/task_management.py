@@ -59,11 +59,17 @@ def _save_task_to_json(task_id: str, task_data: Dict[str, Any]) -> None:
     json_path = _get_task_json_path(task_id)
     
     # 确保temp目录存在
-    TEMP_DIR.mkdir(exist_ok=True)
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
     
     try:
-        with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(task_data, f, ensure_ascii=False, indent=2, default=str)
+        # 原子写入：先写入临时文件，再替换
+        tmp_path = json_path.with_suffix(json_path.suffix + ".tmp")
+        payload = json.dumps(task_data, ensure_ascii=False, indent=2, default=str)
+        with open(str(tmp_path), 'w', encoding='utf-8', newline='\n') as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(str(tmp_path), str(json_path))
     except IOError as e:
         raise HTTPException(
             status_code=500,

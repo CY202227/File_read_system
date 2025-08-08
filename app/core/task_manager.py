@@ -11,8 +11,6 @@ from typing import Dict, Optional, List, Any
 from datetime import datetime, timedelta
 from enum import Enum
 from fastapi import HTTPException
-import threading
-from queue import Queue, PriorityQueue
 from pathlib import Path
 
 
@@ -78,6 +76,29 @@ class TaskManager:
 
         TODO: 后续保留对接数据库的实现（落库与回放）。
         """
+        # 若任务已存在，则仅更新 request 等字段，避免覆盖已写入的 files 等信息
+        json_path = self._get_task_json_path(task_id)
+        if json_path.exists():
+            try:
+                existing = self._load_task_from_json(task_id)
+            except Exception:
+                existing = {}
+            existing["request"] = request_dict
+            existing["updated_at"] = datetime.now()
+            # 如果之前标记为 completed/failed/cancelled，则重新进入 active/pending
+            if existing.get("status") in {
+                TaskStatus.COMPLETED.value,
+                TaskStatus.FAILED.value,
+                TaskStatus.CANCELLED.value,
+            }:
+                existing["status"] = self._decide_initial_status_fs()
+                existing["started_at"] = None
+                existing["completed_at"] = None
+                existing["errors"] = None
+            self._save_task_to_json(task_id, existing)
+            return existing
+
+        # 不存在则创建新文档
         doc: Dict[str, Any] = {
             "task_id": task_id,
             "status": self._decide_initial_status_fs(),
@@ -153,16 +174,23 @@ class TaskManager:
     def _save_task_to_json(self, task_id: str, task_info: Dict) -> None:
         """保存任务信息到JSON文件"""
         json_path = self._get_task_json_path(task_id)
-        
+        # 确保 temp 目录存在
+        self._temp_dir.mkdir(parents=True, exist_ok=True)
+
         try:
             # 转换datetime对象为字符串
             task_data = task_info.copy()
             for key, value in task_data.items():
                 if isinstance(value, datetime):
                     task_data[key] = value.isoformat()
-            
-            with open(json_path, 'w', encoding='utf-8') as f:
-                json.dump(task_data, f, ensure_ascii=False, indent=2, default=str)
+            # 先写入临时文件，再原子替换，避免并发或句柄问题
+            tmp_path = json_path.with_suffix(json_path.suffix + ".tmp")
+            payload = json.dumps(task_data, ensure_ascii=False, indent=2, default=str)
+            with open(str(tmp_path), 'w', encoding='utf-8', newline='\n') as f:
+                f.write(payload)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(str(tmp_path), str(json_path))
         except IOError as e:
             raise HTTPException(
                 status_code=500,
@@ -287,7 +315,7 @@ class TaskManager:
                 if task_data.get("status") in [TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value]:
                     return False
                 return True
-            except:
+            except Exception:
                 return False
         
         # 最后检查数据库（预留）

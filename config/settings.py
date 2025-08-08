@@ -5,7 +5,7 @@ Application Settings Configuration
 
 import os
 from typing import List
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     ALLOWED_EXTENSIONS: List[str] = [
         # 文档格式
         "pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt",
+        # 特殊文档（需预转换）
+        "ofd", "wps",
         # 文本格式
         "txt", "md", "csv", "tsv", "json", "xml",
         # 图像格式 (OCR)
@@ -42,7 +44,9 @@ class Settings(BaseSettings):
         # 音频文件
         "mp4","mp3","wav","flac"
     ]
-    
+    MEDIA_EXTENSIONS: List[str] = [
+        "mp4","mp3","wav","flac"
+    ]
     # 目录设置
     UPLOAD_DIR: str = "uploads"
     TEMP_DIR: str = "temp"
@@ -74,12 +78,15 @@ class Settings(BaseSettings):
     # API设置
     api_key: str = os.getenv("API_KEY", "your-api-key")
     
-    # OFD API设置
+    # OFD/WPS 远端转换服务设置
     ofd_api_url: str = os.getenv("OFD_API_URL", "")
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    # Pydantic v2 settings configuration
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",  # 忽略未在模型中定义的多余环境变量
+    )
 
 
 # 创建全局设置实例

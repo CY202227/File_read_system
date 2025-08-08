@@ -3,18 +3,17 @@
 File upload routes
 """
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Form
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from pathlib import Path
 from typing import Optional, List
 import traceback
 
 from app.utils.file_utils import (
-    generate_task_id, 
     generate_file_uuid, 
     save_uploaded_file, 
     copy_local_file,
-    get_file_info
+    get_file_info,
+    validate_file_extension,
 )
 from app.core.task_manager import (
     validate_or_create_task, 
@@ -23,11 +22,10 @@ from app.core.task_manager import (
     TaskStatus,
     TaskPriority
 )
-from app.api.schemas.upload import (
+from app.api.schemas.upload_schemas import (
     FilePathRequest, 
     UploadResponse, 
     FileUploadInfo,
-    ErrorResponse
 )
 
 router = APIRouter(prefix="/api", tags=["文件上传"])
@@ -68,18 +66,22 @@ async def upload_files_stream(
         
         for file in files:
             try:
+                # 以扩展名为准进行校验（content_type 为 MIME 类型，不能用于与扩展名列表比较）
+                if not validate_file_extension(file.filename or ""):
+                    raise HTTPException(status_code=400, detail=f"不支持的文件格式: {file.filename}")
+
                 file_uuid = generate_file_uuid()
-                
+
                 # 保存上传的文件
                 file_path, original_filename = await save_uploaded_file(
                     upload_file=file,
                     task_id=task_id,
                     file_uuid=file_uuid
                 )
-                
+
                 # 获取文件信息
                 file_info = get_file_info(file_path)
-                
+
                 file_upload_info = FileUploadInfo(
                     file_uuid=file_uuid,
                     original_filename=original_filename,
@@ -88,10 +90,10 @@ async def upload_files_stream(
                     status="success",
                     error_message=None
                 )
-                
+
                 file_uploads.append(file_upload_info)
                 successful_count += 1
-                
+
                 # 向任务管理器添加文件信息
                 add_file_to_task(task_id, {
                     "file_uuid": file_uuid,
@@ -101,7 +103,7 @@ async def upload_files_stream(
                     "status": "success",
                     "uploaded_at": str(file_info.get("created_time", ""))
                 })
-                
+                    
             except Exception as e:
                 file_upload_info = FileUploadInfo(
                     file_uuid=generate_file_uuid(),

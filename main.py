@@ -104,7 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix="/api/v1", tags=["健康检查"])
     app.include_router(file_upload.router, prefix="/api/v1", tags=["文件上传"])
     app.include_router(task_management.router, prefix="/api/v1", tags=["任务管理"])
-#    app.include_router(file_process.router, prefix="/api/v1", tags=["文件处理"])
+    app.include_router(file_process.router, prefix="/api/v1", tags=["文件处理"])
     
     # 设置异常处理器
     setup_exception_handlers(app)

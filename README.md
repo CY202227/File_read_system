@@ -78,11 +78,6 @@ file_read_system/
 **职责**: 专门处理图像中的文字识别，支持多种OCR引擎
 
 - **base_ocr.py**: OCR引擎抽象基类，定义统一的OCR接口
-- **tesseract_ocr.py**: 基于Tesseract的开源OCR实现，支持多语言
-- **paddleocr_engine.py**: 基于PaddleOCR的高精度中英文OCR
-- **cloud_ocr.py**: 集成云端OCR服务（百度、腾讯、阿里云、Azure等）
-- **preprocessor.py**: 图像预处理（去噪、二值化、倾斜校正、增强对比度）
-- **postprocessor.py**: OCR结果后处理（文本矫正、置信度过滤、格式整理）
 
 ### ⚙️ 处理器层 (`app/processors/`)
 

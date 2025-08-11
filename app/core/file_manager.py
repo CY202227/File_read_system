@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union, List, Dict, Any
 from pathlib import Path
 from app.parsers.converters.file_convert import FileConverter
 from config.settings import settings
@@ -6,6 +6,7 @@ from markitdown import MarkItDown
 import pandas as pd
 from app.parsers.file_read.plain_text_read import read_text as read_plain_text
 from app.parsers.file_read.markdown_read import MarkdownRead
+from app.parsers.file_read.excel_read import ExcelRead
 
 
 class FileManager:
@@ -32,6 +33,10 @@ class FileManager:
             return self.converter.run_convert("wps", "pdf")
         if ext == "doc":
             return self.converter.run_convert("doc", "docx")
+        if ext == "xls":
+            return self.converter.run_convert("xls", "xlsx")
+        if ext == "ppt":
+            return self.converter.run_convert("ppt", "pptx")
         if ext in settings.MEDIA_EXTENSIONS:
             return self.converter.run_convert("audio_file", "text")
         # 其他类型不需要预转换
@@ -64,7 +69,7 @@ class FileManager:
         # 默认：不转换，返回原路径
         return self.file_path
 
-    def read_text(self, *, target_format: str = "plain_text", table_precision: Optional[int] = None) -> str:
+    def read_text(self, *, target_format: str = "plain_text", table_precision: Optional[int] = None) -> Union[str, pd.DataFrame, List[Dict[str, Any]]]:
         """根据目标输出格式分派到对应 reader 并返回纯文本。
 
         - target_format == "markdown" → 走 MarkdownRead（将任意受支持文件转为 Markdown 文本）
@@ -83,4 +88,6 @@ class FileManager:
             p = Path(self.file_path)
             suffix = p.suffix.lower()
             return read_plain_text(self.file_path, suffix)
+        if target_format == "dataframe":
+            return ExcelRead.dataframe_read(self.file_path)
         raise ValueError("不受支持的目标类型")

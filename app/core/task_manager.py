@@ -7,7 +7,9 @@ import uuid
 import time
 import os
 import json
-from typing import Dict, Optional, List, Any
+from typing import Dict, Optional, List, Any, Callable
+import functools
+import inspect
 from datetime import datetime, timedelta
 from enum import Enum
 from fastapi import HTTPException
@@ -31,6 +33,36 @@ class TaskPriority(Enum):
     NORMAL = 2
     HIGH = 3
     URGENT = 4
+
+
+def _tm_build_log_message(func, bound: inspect.BoundArguments) -> str:
+    keys = ["task_id", "status", "section", "priority"]
+    parts: List[str] = []
+    for k in keys:
+        if k in bound.arguments:
+            try:
+                parts.append(f"{k}={bound.arguments.get(k)}")
+            except Exception:
+                parts.append(f"{k}=?")
+    return ", ".join(parts)
+
+
+def tm_log_call(func: Callable):
+    sig = inspect.signature(func)
+    is_coro = False
+
+    @functools.wraps(func)
+    def _wrap(*args, **kwargs):
+        try:
+            bound = sig.bind_partial(*args, **kwargs)
+        except Exception:
+            bound = inspect.Signature().bind_partial()
+        # 避免循环导入：延迟导入 logger
+        from config.logging_config import get_logger as _get
+        _get(__name__).info("enter %s(%s)", func.__qualname__, _tm_build_log_message(func, bound))
+        return func(*args, **kwargs)
+
+    return _wrap
 
 
 class TaskManager:
@@ -71,6 +103,7 @@ class TaskManager:
         )
 
     # ---------------- JSON 驱动的创建/更新/查询 ----------------
+    @tm_log_call
     def create_task_from_request(self, task_id: str, request_dict: Dict[str, Any]) -> Dict[str, Any]:
         """创建任务JSON，保存完整入参到文件系统（队列采用JSON管理）。
 
@@ -121,6 +154,7 @@ class TaskManager:
         self._save_task_to_json(task_id, doc)
         return doc
 
+    @tm_log_call
     def update_section(self, task_id: str, section: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """更新指定分段（如 upload_file_json）并保存到JSON。"""
         doc = self._load_task_from_json(task_id)
@@ -135,6 +169,7 @@ class TaskManager:
         self._save_task_to_json(task_id, doc)
         return doc
 
+    @tm_log_call
     def append_event(self, task_id: str, event: Dict[str, Any]) -> Dict[str, Any]:
         """附加一条事件（供调试或SSE）。"""
         doc = self._load_task_from_json(task_id)
@@ -150,6 +185,7 @@ class TaskManager:
         self._save_task_to_json(task_id, doc)
         return doc
 
+    @tm_log_call
     def get_status_from_json(self, task_id: str) -> Dict[str, Any]:
         """读取任务JSON并返回 FileProcessResponse 兼容结构。"""
         doc = self._load_task_from_json(task_id)
@@ -171,6 +207,7 @@ class TaskManager:
         """获取任务JSON文件路径"""
         return self._temp_dir / f"{task_id}.json"
     
+    @tm_log_call
     def _save_task_to_json(self, task_id: str, task_info: Dict) -> None:
         """保存任务信息到JSON文件"""
         json_path = self._get_task_json_path(task_id)
@@ -186,10 +223,16 @@ class TaskManager:
             # 先写入临时文件，再原子替换，避免并发或句柄问题
             tmp_path = json_path.with_suffix(json_path.suffix + ".tmp")
             payload = json.dumps(task_data, ensure_ascii=False, indent=2, default=str)
-            with open(str(tmp_path), 'w', encoding='utf-8', newline='\n') as f:
-                f.write(payload)
+            payload_bytes = payload.encode('utf-8')
+            # Windows 兼容：二进制写入；fsync 失败则忽略
+            with open(str(tmp_path), 'wb') as f:
+                f.write(payload_bytes)
                 f.flush()
-                os.fsync(f.fileno())
+                try:
+                    os.fsync(f.fileno())
+                except (OSError, AttributeError):
+                    # 某些平台/文件系统可能不支持fsync或句柄不可用，忽略确保至少flush
+                    pass
             os.replace(str(tmp_path), str(json_path))
         except IOError as e:
             raise HTTPException(
@@ -197,6 +240,7 @@ class TaskManager:
                 detail=f"保存任务文件失败: {str(e)}"
             )
     
+    @tm_log_call
     def _load_task_from_json(self, task_id: str) -> Dict:
         """从JSON文件加载任务信息"""
         json_path = self._get_task_json_path(task_id)
@@ -217,6 +261,7 @@ class TaskManager:
                 detail=f"读取任务文件失败: {str(e)}"
             )
     
+    @tm_log_call
     def _check_task_exists_in_filesystem(self, task_id: str) -> bool:
         """
         检查任务在文件系统中是否存在
@@ -230,6 +275,7 @@ class TaskManager:
         json_path = self._get_task_json_path(task_id)
         return json_path.exists()
     
+    @tm_log_call
     def _check_task_exists_in_db(self, task_id: str) -> bool:
         """
         检查任务在数据库中是否存在（预留接口）
@@ -244,6 +290,7 @@ class TaskManager:
         # return self._query_task_in_db(task_id) is not None
         return False
     
+    @tm_log_call
     def create_task(self, task_id: Optional[str] = None, priority: TaskPriority = TaskPriority.NORMAL, 
                    metadata: Optional[Dict] = None) -> str:
         """
@@ -297,6 +344,7 @@ class TaskManager:
         self._save_task_to_json(task_id, task_info)
         return task_id
     
+    @tm_log_call
     def validate_task(self, task_id: str) -> bool:
         """
         验证任务ID是否存在且有效
@@ -324,6 +372,7 @@ class TaskManager:
         
         return False
     
+    @tm_log_call
     def get_task(self, task_id: str) -> Dict:
         """
         获取任务信息
@@ -341,6 +390,7 @@ class TaskManager:
             return self._load_task_from_json(task_id)
         raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
     
+    @tm_log_call
     def update_task_status(self, task_id: str, status: TaskStatus, **kwargs) -> None:
         """
         更新任务状态
@@ -379,6 +429,7 @@ class TaskManager:
         # 保存到JSON文件
         self._save_task_to_json(task_id, task)
     
+    @tm_log_call
     def add_file_to_task(self, task_id: str, file_info: Dict) -> None:
         """
         向任务添加文件信息
@@ -413,6 +464,7 @@ class TaskManager:
 
         self._save_task_to_json(task_id, task)
     
+    @tm_log_call
     def get_next_pending_task(self) -> Optional[str]:
         """
         获取下一个待处理任务
@@ -432,6 +484,7 @@ class TaskManager:
                 return obj.get("task_id")
         return None
     
+    @tm_log_call
     def start_task(self, task_id: str) -> bool:
         """
         启动任务
@@ -455,6 +508,7 @@ class TaskManager:
         self._save_task_to_json(task_id, task)
         return True
     
+    @tm_log_call
     def complete_task(self, task_id: str, success: bool = True, error_message: Optional[str] = None) -> None:
         """
         完成任务
@@ -476,6 +530,7 @@ class TaskManager:
         # 按新策略：不在完成时删除上传原文件，保留结果 JSON
         self._save_task_to_json(task_id, task)
     
+    @tm_log_call
     def cancel_task(self, task_id: str) -> bool:
         """
         取消任务
@@ -496,6 +551,7 @@ class TaskManager:
         self._save_task_to_json(task_id, task)
         return True
     
+    @tm_log_call
     def list_tasks(self, status: Optional[TaskStatus] = None, limit: int = 100) -> List[Dict]:
         """
         列出任务
@@ -524,6 +580,7 @@ class TaskManager:
         tasks.sort(key=_created_at, reverse=True)
         return tasks[:limit]
     
+    @tm_log_call
     def get_queue_status(self) -> Dict:
         """
         获取队列状态
@@ -556,6 +613,7 @@ class TaskManager:
             "total_tasks": total,
         }
     
+    @tm_log_call
     def cleanup_expired_tasks(self) -> int:
         """
         无需定期清理任务文件。按需返回 0。
@@ -563,6 +621,7 @@ class TaskManager:
         """
         return 0
 
+    @tm_log_call
     def cleanup_uploaded_sources(self, older_than_days: int = 7) -> Dict[str, int]:
         """
         每周（或指定天数）扫描一次：对已完成且完成时间早于指定天数的任务，

@@ -215,6 +215,63 @@ file_read_system/
 5. **质量评估** → 评估分块效果和语义连贯性
 6. **切块输出** → 返回适合向量化的文本块数组
 
+## ⚡ API 快速用法（对齐当前实现）
+
+- 接口：`POST /api/v1/file/process`
+- 目标格式（target_format）：`plain_text | markdown | dataframe`
+- 结果：`result_data` 内始终按目标格式返回主体数据，并在启用时附带 `chunking` 与 `summary`
+
+示例：语义切分 + 摘要 + 文本返回
+
+```json
+{
+  "task_id": "task_xxx",
+  "purpose": "content_reading",
+  "target_format": "plain_text",
+  "table_precision": 10,
+  "enable_chunking": true,
+  "chunking_strategy": "semantic_splitting",
+  "chunk_size": 800,
+  "chunk_overlap": 120,
+  "chunking_config": {
+    "semantic_splitting_config": {
+      "similarity_threshold": 0.3
+    }
+  },
+  "enable_multi_file_summary": true,
+  "summary_length": 300,
+  "summary_focus": ["main_points", "key_findings"],
+  "summary_return_top_k": 5
+}
+```
+
+自定义分隔符分块（Level 6）
+
+```json
+{
+  "task_id": "task_xxx",
+  "purpose": "content_reading",
+  "target_format": "plain_text",
+  "enable_chunking": true,
+  "chunking_strategy": "custom_delimiter_splitting",
+  "chunk_size": 800,
+  "chunk_overlap": 120,
+  "chunking_config": {
+    "custom_delimiter_config": {"delimiter": "——END——"}
+  }
+}
+```
+
+说明与约束
+
+- DataFrame 仅返回 `records`（list[dict]）或 `records_list`（多文件）。
+- 若抽取内容为空（如 PDF 无文本层），摘要将短路为空，不调用模型。
+- 切块结果包含：
+  - `chunking.chunks`：合并文本后的整体切片
+  - `chunking.per_file[i].chunks`：逐文件切片（用于来源定位）
+
+更多示例见 `docs/requests/`。
+
 ## 🛡️ 安全考虑
 
 - 文件类型白名单验证

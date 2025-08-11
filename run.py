@@ -48,9 +48,18 @@ DEBUG=true
 HOST=0.0.0.0
 PORT=8000
 
+# 嵌入模型配置（必填）
+EMBEDDING_MODEL=text-embedding-ada-002
+EMBEDDING_MODEL_URL=http://your-embedding-server/v1
+EMBEDDING_MODEL_API_KEY=your-key
+
+# 文本模型（摘要/Agentic 切分）
+QWEN3_API_KEY=your-qwen-key
+QWEN3_MODEL_NAME=qwen-turbo
+QWEN3_BASE_URL=http://your-llm-server/v1
+
 # 文件处理配置
 MAX_FILE_SIZE=52428800
-OCR_ENGINE=tesseract
 DEFAULT_CHUNK_SIZE=1000
 
 # 日志配置

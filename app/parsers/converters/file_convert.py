@@ -6,8 +6,35 @@ from config.settings import settings
 import mimetypes
 from config.logging_config import get_logger
 import json
+import functools
+import inspect
 
 logger = get_logger(__name__)
+
+def _fc_build_log_message(func, bound: inspect.BoundArguments) -> str:
+    keys = ["input_format", "target_format", "spilit_time", "file_path"]
+    parts = []
+    for k in keys:
+        if k in bound.arguments:
+            try:
+                parts.append(f"{k}={bound.arguments.get(k)}")
+            except Exception:
+                parts.append(f"{k}=?")
+    return ", ".join(parts)
+
+
+def fc_log_call(func):
+    sig = inspect.signature(func)
+    @functools.wraps(func)
+    def _wrap(*args, **kwargs):
+        try:
+            bound = sig.bind_partial(*args, **kwargs)
+        except Exception:
+            bound = inspect.Signature().bind_partial()
+        get_logger(__name__).info("enter %s(%s)", func.__qualname__, _fc_build_log_message(func, bound))
+        return func(*args, **kwargs)
+    return _wrap
+
 
 class FileConverter:
     def __init__(self, ofd_authorization: str, ofd_clientid: str, file_path: str):
@@ -18,6 +45,7 @@ class FileConverter:
         else:
             raise ValueError(f"文件不存在: {file_path}")
 
+    @fc_log_call
     def run_convert(self, input_format: str, target_format: str) -> str:
         input_format = (input_format or "").lower()
         target_format = (target_format or "").lower()
@@ -31,6 +59,12 @@ class FileConverter:
         # doc -> docx（本地 libreoffice）
         elif input_format == "doc" and target_format in {"docx", "auto"}:
             result, convert_result = self.doc_convert_to_docx()
+        # xls -> xlsx（本地 libreoffice）
+        elif input_format == "xls" and target_format in {"xlsx", "auto"}:
+            result, convert_result = self.xls_convert_to_xlsx()
+        # ppt -> pptx（本地 libreoffice）
+        elif input_format == "ppt" and target_format in {"pptx", "auto"}:
+            result, convert_result = self.ppt_convert_to_pptx()
         elif input_format == "audio_file" and target_format in {"text", "auto"}:
             result, convert_result = self.audio_file_convert_to_text(10)
         else:
@@ -40,6 +74,7 @@ class FileConverter:
             return convert_result
         raise ValueError("转换失败")
 
+    @fc_log_call
     def ofd_wps_remote_convert(self) -> Tuple[bool, str]:
 
         ofd_url = (settings.ofd_api_url or os.getenv("OFD_API_URL"))
@@ -76,6 +111,7 @@ class FileConverter:
                 raise ValueError("获取文件路径失败")
         else:
             return False, str(result_json)
+    @fc_log_call
     def doc_convert_to_docx(self) -> Tuple[bool, str]:
         output_path = self.file_path.replace(".doc", ".docx")
         subprocess.run([
@@ -90,9 +126,40 @@ class FileConverter:
         return True, output_path
 
 
+    @fc_log_call
+    def xls_convert_to_xlsx(self) -> Tuple[bool, str]:
+        output_path = self.file_path.replace(".xls", ".xlsx")
+        subprocess.run([
+            "libreoffice",
+            "--headless",
+            "--convert-to",
+            "xlsx",
+            self.file_path,
+            "--outdir",
+            os.path.dirname(self.file_path),
+        ], check=False)
+        return True, output_path
+
+
+    @fc_log_call
+    def ppt_convert_to_pptx(self) -> Tuple[bool, str]:
+        output_path = self.file_path.replace(".ppt", ".pptx")
+        subprocess.run([
+            "libreoffice",
+            "--headless",
+            "--convert-to",
+            "pptx",
+            self.file_path,
+            "--outdir",
+            os.path.dirname(self.file_path),
+        ], check=False)
+        return True, output_path
+
+
+    @fc_log_call
     def audio_file_convert_to_text(self, spilit_time) -> Tuple[bool, str]:
         # 按照提供的唯一接口进行流式转写
-        url = "http://180.153.21.76:12119/stream_audio_to_text" + f"?spilit_time={spilit_time}"
+        url = "http://180.153.21.76:12119/custom_audio_to_text" + f"?spilit_time={spilit_time}"
         headers = {"accept": "application/json"}
         files_payload = None
 

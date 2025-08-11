@@ -1,4 +1,4 @@
-# 文件处理API使用示例
+# 文件处理API使用示例（对齐当前实现）
 
 ## 概述
 
@@ -8,47 +8,45 @@
 
 ### 必需参数
 
-- `task_id`: 任务ID，用于跟踪处理进度
-- `purpose`: 读取文件的目的
-- `target_format`: 目标输出格式
-- `content_return_format`: 文件内容的返回格式
+- `task_id`: 任务ID
+- `purpose`: 读取文件的目的（当前仅接收 `content_reading`，仅日志用途）
+- `target_format`: 目标输出格式（`plain_text | markdown | dataframe`）
 
 ### 可选参数
 
-- `table_precision`: 读取表格的精度
+- `table_precision`: 表格精度（DataFrame读取显示精度）
 - `enable_chunking`: 是否启用文本分块
-- `enable_multi_file_summary`: 是否需要对多文件进行总结
-- `enable_data_cleaning`: 是否启用数据清理
-- `custom_parameters`: 自定义参数，可以接收任何额外的参数
+- `chunking_strategy`: 分块策略（见下）
+- `chunk_size` / `chunk_overlap`: 分块尺寸配置
+- `chunking_config`: 各策略细化配置（见下）
+- `enable_multi_file_summary`: 是否进行摘要
+- `summary_length` / `summary_focus` / `summary_return_top_k`
+- `custom_parameters`: 自定义参数（透传占位）
 
 ## 使用示例
 
-### 1. 基础文件读取
+### 1. 基础文件读取（plain_text）
 
 ```json
 {
     "task_id": "task_20241201_001",
     "purpose": {"value": "content_reading"},
-    "target_format": {"value": "markdown"},
-    "content_return_format": {"value": "structured"}
+    "target_format": {"value": "plain_text"}
 }
 ```
 
-### 2. 高精度表格处理
+### 2. DataFrame 读取
 
 ```json
 {
     "task_id": "task_20241201_002",
     "purpose": {"value": "content_reading"},
-    "target_format": {"value": "excel"},
-    "content_return_format": {"value": "structured"},
-    "table_precision": {"value": 18},
-    "preserve_formatting": true,
-    "extract_metadata": true
+    "target_format": {"value": "dataframe"},
+    "table_precision": {"value": 12}
 }
 ```
 
-### 3. 文本分块处理
+### 3. 文本分块处理（返回主体按 target_format；chunking 附带在 result_data.chunking）
 
 #### 3.1 Level 1: 字符级分块
 
@@ -56,8 +54,7 @@
 {
     "task_id": "task_20241201_003a",
     "purpose": {"value": "content_reading"},
-    "target_format": {"value": "chunks"},
-    "content_return_format": {"value": "plain_text"},
+    "target_format": {"value": "plain_text"},
     "enable_chunking": true,
     "chunking_strategy": {"value": "character_splitting"},
     "chunk_size": 1000,
@@ -71,8 +68,7 @@
 {
     "task_id": "task_20241201_003b",
     "purpose": {"value": "content_reading"},
-    "target_format": {"value": "chunks"},
-    "content_return_format": {"value": "plain_text"},
+    "target_format": {"value": "plain_text"},
     "enable_chunking": true,
     "chunking_strategy": {"value": "recursive_character_splitting"},
     "chunk_size": 1500,
@@ -92,8 +88,7 @@
 {
     "task_id": "task_20241201_003c",
     "purpose": {"value": "content_reading"},
-    "target_format": {"value": "chunks"},
-    "content_return_format": {"value": "structured"},
+    "target_format": {"value": "plain_text"},
     "enable_chunking": true,
     "chunking_strategy": {"value": "document_specific_splitting"},
     "chunk_size": 2000,
@@ -115,8 +110,7 @@
 {
     "task_id": "task_20241201_003d",
     "purpose": {"value": "content_reading"},
-    "target_format": {"value": "chunks"},
-    "content_return_format": {"value": "structured"},
+    "target_format": {"value": "plain_text"},
     "enable_chunking": true,
     "chunking_strategy": {"value": "auto"},
     "chunk_size": 1500,
@@ -138,8 +132,7 @@
 {
     "task_id": "task_20241201_003e",
     "purpose": {"value": "content_reading"},
-    "target_format": {"value": "chunks"},
-    "content_return_format": {"value": "structured"},
+    "target_format": {"value": "plain_text"},
     "enable_chunking": true,
     "chunking_strategy": {"value": "agentic_splitting"},
     "chunk_size": 2000,
@@ -177,123 +170,53 @@
 }
 ```
 
+### 3.6 Level 6: 自定义分隔符分块
+
+```json
+{
+    "task_id": "task_20241201_003g",
+    "purpose": {"value": "content_reading"},
+    "target_format": {"value": "plain_text"},
+    "enable_chunking": true,
+    "chunking_strategy": {"value": "custom_delimiter_splitting"},
+    "chunk_size": 1000,
+    "chunk_overlap": 100,
+    "chunking_config": {
+        "custom_delimiter_config": {
+            "delimiter": "——END——"
+        }
+    }
+}
+```
+
+
 ### 4. 多文件总结
 
 ```json
 {
     "task_id": "task_20241201_004",
     "purpose": {"value": "content_reading"},
-    "target_format": {"value": "summary"},
-    "content_return_format": {"value": "structured"},
+    "target_format": {"value": "plain_text"},
     "enable_multi_file_summary": true,
     "summary_length": 800,
     "summary_focus": ["main_points", "key_findings", "recommendations"]
 }
 ```
 
-### 4.1 Summary 响应控制（Top-K + SSE 流式返回）
+ 
+### 4.1 Summary 响应控制（Top-K）
 
 ```json
 {
     "task_id": "task_20241201_004_stream",
     "purpose": "content_reading",
-    "target_format": "summary",
-    "content_return_format": "structured",
+    "target_format": "plain_text",
     "summary_return_top_k": 5,
-    "summary_streaming": true,
-    "streaming_channel": "sse"
+    "enable_multi_file_summary": true
 }
 ```
 
-### 5. 数据清理处理
-
-```json
-{
-    "task_id": "task_20241201_005",
-    "purpose": {"value": "content_reading"},
-    "target_format": {"value": "json"},
-    "content_return_format": {"value": "structured"},
-    "enable_data_cleaning": true,
-    "cleaning_level": {"value": "advanced"},
-    "custom_cleaning_rules": {
-        "remove_extra_spaces": true,
-        "normalize_quotes": true,
-        "remove_special_chars": false
-    }
-}
-```
-
-### 6. OCR图像处理
-
-```json
-{
-    "task_id": "task_20241201_006",
-    "purpose": {"value": "content_reading"},
-    "target_format": {"value": "markdown"},
-    "content_return_format": {"value": "structured"},
-    "include_images": true,
-    "ocr_confidence_threshold": 0.8,
-    "custom_parameters": {
-        "preferred_ocr_engine": "paddleocr",
-        "language": "zh-CN",
-        "extract_tables": true
-    }
-}
-```
-
-### 7. 格式转换
-
-```json
-{
-    "task_id": "task_20241201_007",
-    "purpose": {"value": "format_conversion"},
-    "target_format": {"value": "markdown"},
-    "content_return_format": {"value": "original"},
-    "preserve_formatting": true,
-    "extract_metadata": true
-}
-```
-
-### 8. 复杂自定义处理
-
-```json
-{
-    "task_id": "task_20241201_008",
-    "purpose": {"value": "both"},
-    "target_format": {"value": "markdown"},
-    "content_return_format": {"value": "mixed"},
-    "table_precision": {"value": 15},
-    "enable_chunking": true,
-    "chunking_strategy": {"value": "semantic"},
-    "chunk_size": 2000,
-    "chunk_overlap": 300,
-    "enable_multi_file_summary": true,
-    "summary_length": 1000,
-    "summary_focus": ["main_points", "key_findings", "recommendations", "action_items"],
-    "enable_data_cleaning": true,
-    "cleaning_level": {"value": "advanced"},
-    "preserve_formatting": true,
-    "extract_metadata": true,
-    "include_images": true,
-    "ocr_confidence_threshold": 0.85,
-    "custom_parameters": {
-        "language": "zh-CN",
-        "extract_tables": true,
-        "include_headers": true,
-        "max_file_size": "100MB",
-        "preferred_ocr_engine": "paddleocr",
-        "output_encoding": "utf-8",
-        "include_page_numbers": true,
-        "extract_footnotes": true,
-        "preserve_links": true,
-        "custom_styles": {
-            "heading_style": "atx",
-            "list_style": "ordered",
-            "code_style": "fenced"
-        }
-    }
-}
-```
+（已移除未实现项示例：数据清理、OCR、格式转换等）
 
 ## 参数说明
 
@@ -305,14 +228,7 @@
 
 ### OutputFormat (输出格式)
 
-- `markdown`: Markdown格式
-- `json`: JSON格式
-- `csv`: CSV格式
-- `excel`: Excel格式
-- `dataframe`: DataFrame格式
-- `text`: 纯文本格式
-- `chunks`: 分块输出
-- `summary`: 总结输出
+- `plain_text` / `markdown` / `dataframe`
 
 ### ContentReturnFormat (内容返回格式)
 
@@ -359,6 +275,11 @@
 - 配置参数：llm_model, chunking_prompt, max_tokens_per_chunk
 
 #### Bonus Level: Alternative Representation Chunking (替代表示分块)
+- #### Level 6: Custom Delimiter Splitting（自定义分隔符）
+
+  - `custom_delimiter_splitting`：按 `custom_delimiter_config.delimiter` 切分
+  - 配置参数：`custom_delimiter_config.delimiter`（字符串，必填）
+
 
 - `alternative_representation_chunking`: 用于检索和索引的替代表示
 - 配置参数：representation_types, indexing_strategy, retrieval_optimized
@@ -372,9 +293,7 @@
 
 ### Summary 响应控制
 
-- `summary_return_top_k` (int): 仅 summary 有效，返回前 K 条要点
-- `summary_streaming` (bool): 仅 summary 有效，是否通过 SSE 流式返回
-- `streaming_channel` (str): 流式通道，当前为 `sse`
+- `summary_return_top_k` (int): 返回前 K 条要点；当无内容时短路为空
 
 ### 兼容纯字符串输入
 

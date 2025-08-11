@@ -4,18 +4,19 @@ File processing related schemas
 """
 
 from typing import Optional, List, Dict, Any, Literal
+from config.constants import CONTENT_READING_OUTPUT_FORMATS
 from pydantic import BaseModel, Field
 from pydantic import field_validator, model_validator
 import json
 
 
 class ProcessingPurpose(BaseModel):
-    """处理目的模型"""
-    value: str = Field(..., description="处理目的值")
+    """处理目的模型（当前仅用于日志，不参与分支）"""
+    value: str = Field(..., description="处理目的值（当前仅日志用途）")
     
     @field_validator('value')
     def validate_purpose(cls, v):
-        valid_values = ["format_conversion", "content_reading"]
+        valid_values = ["content_reading"]
         if v not in valid_values:
             raise ValueError(f"处理目的必须是以下之一: {valid_values}")
         return v
@@ -27,9 +28,9 @@ class OutputFormat(BaseModel):
     
     @field_validator('value')
     def validate_format(cls, v):
-        valid_values = ["markdown", "json", "csv", "excel", "dataframe", "text", "chunks", "plain_text"]
-        if v not in valid_values:
-            raise ValueError(f"输出格式必须是以下之一: {valid_values}")
+        valid_content_reading_values = sorted(list(CONTENT_READING_OUTPUT_FORMATS))
+        if v not in valid_content_reading_values:
+            raise ValueError(f"输出格式必须是以下之一: {valid_content_reading_values}")
         return v
 
 
@@ -65,22 +66,15 @@ class ChunkingStrategy(BaseModel):
             "agentic_splitting",
             # Bonus Level: Alternative Representation Chunking
             "alternative_representation_chunking"
+            # Level 6: Custom Delimiter Splitting
+            "custom_delimiter_splitting",
         ]
         if v not in valid_values:
             raise ValueError(f"分块策略必须是以下之一: {valid_values}")
         return v
 
 
-class DataCleaningLevel(BaseModel):
-    """数据清理级别模型"""
-    value: str = Field(..., description="数据清理级别值")
-    
-    @field_validator('value')
-    def validate_cleaning_level(cls, v):
-        valid_values = ["none", "basic", "advanced", "custom"]
-        if v not in valid_values:
-            raise ValueError(f"数据清理级别必须是以下之一: {valid_values}")
-        return v
+ 
 
 
 class RecursiveSplittingConfig(BaseModel):
@@ -196,14 +190,14 @@ class ChunkingConfig(BaseModel):
 
 
 class ModelProcessingConfig(BaseModel):
-    """模型处理配置（可选：开启后由模型进行总结/改写/抽取等）"""
-    enable: bool = Field(default=False, description="是否启用模型处理")
-    prompt: Optional[str] = Field(default=None, description="自定义提示词（用户提示）")
-    system_prompt: Optional[str] = Field(default=None, description="系统提示词（约束角色/风格）")
-    model_name: Optional[str] = Field(default=None, description="模型名称（不填则使用系统默认）")
-    temperature: Optional[float] = Field(default=0.3, ge=0.0, le=2.0, description="采样温度")
-    top_p: Optional[float] = Field(default=1.0, ge=0.0, le=1.0, description="核采样top_p")
-    max_tokens: Optional[int] = Field(default=1024, ge=1, description="最大输出token数")
+    """模型处理配置（未实现，预留：总结/改写/抽取等）"""
+    enable: bool = Field(default=False, description="是否启用模型处理（未实现）")
+    prompt: Optional[str] = Field(default=None, description="自定义提示词（未实现）")
+    system_prompt: Optional[str] = Field(default=None, description="系统提示词（未实现）")
+    model_name: Optional[str] = Field(default=None, description="模型名称（未实现）")
+    temperature: Optional[float] = Field(default=0.3, ge=0.0, le=2.0, description="采样温度（未实现）")
+    top_p: Optional[float] = Field(default=1.0, ge=0.0, le=1.0, description="核采样top_p（未实现）")
+    max_tokens: Optional[int] = Field(default=1024, ge=1, description="最大输出token数（未实现）")
 
 
 class FileProcessRequest(BaseModel):
@@ -256,60 +250,18 @@ class FileProcessRequest(BaseModel):
         description="总结长度（字符数）"
     )
     summary_focus: Optional[List[str]] = Field(
-        default=["main_points", "key_findings", "recommendations","diy"], 
+        default=["main_points", "key_findings", "recommendations"], 
         description="总结重点关注的方面"
     )
-    diy_summary_prompt: Optional[str] = Field(
-        default=None, 
-        description="自定义总结提示词"
-    )
-    
-    # 数据清理参数
-    enable_data_cleaning: bool = Field(default=False, description="是否启用数据清理")
-    cleaning_level: Optional[DataCleaningLevel] = Field(
-        default=DataCleaningLevel(value="basic"), 
-        description="数据清理级别"
-    )
-    custom_cleaning_rules: Optional[Dict[str, Any]] = Field(
-        default=None, 
-        description="自定义清理规则"
-    )
-    
-    # 高级参数
-    preserve_formatting: bool = Field(
-        default=True, 
-        description="是否保留原始格式"
-    )
-    extract_metadata: bool = Field(
-        default=False, 
-        description="是否提取文件元数据"
-    )
-    include_images: bool = Field(
-        default=False, 
-        description="是否包含图像内容（OCR）"
-    )
 
-    # 模型处理参数（可选）
-    model_processing: ModelProcessingConfig = Field(
-        default_factory=ModelProcessingConfig,
-        description="模型处理配置（开关/提示词/模型参数等）"
-    )
 
     # 仅针对 summary 的响应控制
     summary_return_top_k: Optional[int] = Field(
         default=None,
         ge=1,
-        description="仅当 target_format=summary 时生效：返回前K条要点/段落"
+        description="返回前K条要点/段落（未实现）"
     )
-    summary_streaming: bool = Field(
-        default=False,
-        description="仅当 target_format=summary 时生效：是否通过SSE流式返回"
-    )
-    streaming_channel: Optional[str] = Field(
-        default="sse",
-        description="流式返回通道，当前固定为sse（预留字段）"
-    )
-    
+
     # 自定义参数（灵活扩展）
     custom_parameters: Optional[Dict[str, Any]] = Field(
         default_factory=dict, 
@@ -317,7 +269,7 @@ class FileProcessRequest(BaseModel):
     )
     
     # 验证器
-    @field_validator('purpose', 'target_format', 'cleaning_level', 'chunking_strategy', mode='before')
+    @field_validator('purpose', 'target_format', 'chunking_strategy', mode='before')
     def coerce_value_models(cls, v):
         # 兼容纯字符串写法：自动包裹为 {"value": v}
         if isinstance(v, str):
@@ -349,7 +301,7 @@ class FileProcessRequest(BaseModel):
 
 
 class ProcessingOptions(BaseModel):
-    """处理选项的详细配置"""
+    """处理选项的详细配置（未实现，预留）"""
     
     # 输出选项
     output_options: Dict[str, Any] = Field(
@@ -416,13 +368,7 @@ EXAMPLE_REQUEST = {
     },
     "enable_multi_file_summary": True,
     "summary_length": 800,
-    "summary_focus": ["main_points", "key_findings", "recommendations","diy"],
-    "diy_summary_prompt": "请用5条要点总结本文档的关键信息",
-    "enable_data_cleaning": True,
-    "cleaning_level": {"value": "advanced"},
-    "preserve_formatting": True,
-    "extract_metadata": True,
-    "include_images": True,
+    "summary_focus": ["main_points", "key_findings", "recommendations"],
     "model_processing": {
         "enable": True,
         "prompt": "请用5条要点总结本文档的关键信息",

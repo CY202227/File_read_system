@@ -20,6 +20,8 @@ PyPDF2           # PDF文档处理
 pdfplumber       # PDF高级处理
 chardet          # 字符编码检测
 aiofiles         # 异步文件操作
+beautifulsoup4   # HTML解析为纯文本
+python-pptx      # PPTX解析
 
 
 # OCR相关

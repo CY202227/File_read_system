@@ -26,12 +26,8 @@ class AIClient:
         text_model_name: Optional[str] = None,
     ) -> None:
         self.embedding_model_name: str = (
-            (embedding_model_name or settings.EMBEDDING_MODEL or "").strip()
+            (embedding_model_name or settings.EMBEDDING_MODEL or "text-embedding-ada-002").strip()
         )
-        if not self.embedding_model_name:
-            raise ValueError(
-                "EMBEDDING_MODEL must be configured or provided for AIClient"
-            )
 
         self.text_model_name: str = (
             (text_model_name or get_default_text_model_name() or "").strip()

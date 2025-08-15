@@ -25,6 +25,7 @@ import traceback
 from app.vectorization.chunking import chunk_text
 from app.ai.client import AIClient
 from app.core.file_manager import FileManager
+from app.processors.information_extraction import extract_information
 
 
 def _build_log_message(func, bound: inspect.BoundArguments) -> str:
@@ -123,14 +124,27 @@ class JobManager:
             if enable_chunking or (self._get_value(request.get("target_format")) == "chunks"):
                 chunks_result = self._handle_chunking(task_id, request, texts)
 
-            # 5) 总结（当目标是 summary 或显式开启多文件总结）
+            # 5) 信息抽取（仅当 enable_extract 为 True）
+            extraction_result: Optional[Dict[str, Any]] = None
+            try:
+                enable_extract = bool(request.get("enable_extract", False))
+                if enable_extract:
+                    cfg = request.get("extract_config") or {}
+                    merged_text = "\n\n".join([t for _, t in texts if isinstance(t, str)])
+                    if merged_text.strip():
+                        extraction_result = extract_information(merged_text, cfg)
+            except Exception as e:
+                self.logger.warning("information_extraction skipped or failed: %s", e)
+                extraction_result = None
+
+            # 6) 总结（当目标是 summary 或显式开启多文件总结）
             is_summary_target = (target_format == "summary")
             enable_multi_file_summary = bool(request.get("enable_multi_file_summary", False))
             summary_data: Optional[Dict[str, Any]] = None
             if is_summary_target or enable_multi_file_summary:
                 summary_data = self._handle_summary(task_id, request, texts, chunks_result)
 
-            # 6) 输出结果：统一返回内存数据（不落盘）
+            # 7) 输出结果：统一返回内存数据
             data_dict: Dict[str, Any] = {}
             if target_format == "chunks":
                 data_dict.update(chunks_result or {"chunks": []})
@@ -149,11 +163,13 @@ class JobManager:
                 joined_text = "\n\n".join([t for _, t in texts if isinstance(t, str)])
                 data_dict["text"] = joined_text
 
-            # 附加：无论目标为何，只要有切块/摘要，均在 result_data 下附带
+            # 附加：无论目标为何，只要有切块/摘要/抽取，均在 result_data 下附带
             if chunks_result is not None:
                 data_dict["chunking"] = chunks_result
             if summary_data is not None:
                 data_dict["summary"] = summary_data
+            if extraction_result is not None:
+                data_dict["extraction"] = extraction_result
 
             result_payload: Dict[str, Any] = {"url": None, "data": data_dict}
 
@@ -329,8 +345,7 @@ class JobManager:
                 {"role": "system", "content": "你是专业的文本总结助手。"},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.2,
-            max_tokens=1024,
+            temperature=0.2
         )
         # 事后裁剪前 K 条要点（健壮解析）
         if k is not None:
@@ -355,7 +370,8 @@ class JobManager:
         """
         if k <= 0:
             return text
-        import re, json
+        import re
+        import json
         # 尝试 JSON 数组
         try:
             m = re.search(r"\[\s*[\s\S]*?\]", text)
@@ -389,7 +405,8 @@ class JobManager:
 
         返回清洗过的字符串列表。
         """
-        import re, json
+        import re
+        import json
         # JSON 数组
         try:
             m = re.search(r"\[\s*[\s\S]*?\]", text)

@@ -65,7 +65,7 @@ class ChunkingStrategy(BaseModel):
             # Level 5: Agentic Splitting
             "agentic_splitting",
             # Bonus Level: Alternative Representation Chunking
-            "alternative_representation_chunking"
+            "alternative_representation_chunking",
             # Level 6: Custom Delimiter Splitting
             "custom_delimiter_splitting",
         ]
@@ -200,6 +200,24 @@ class ModelProcessingConfig(BaseModel):
     max_tokens: Optional[int] = Field(default=1024, ge=1, description="最大输出token数（未实现）")
 
 
+# ---------------- LangExtract 配置（必填） ----------------
+class LXExtractionItem(BaseModel):
+    extraction_class: str = Field(..., description="抽取类名（如 人物/事件）")
+    extraction_text: str = Field(..., description="原文中的精确片段")
+    attributes: Dict[str, Any] = Field(default_factory=dict, description="属性字典")
+
+
+class LXExampleData(BaseModel):
+    text: str = Field(..., description="示例原文片段")
+    extractions: List[LXExtractionItem] = Field(default_factory=list, description="在该示例中的抽取标签列表")
+
+
+class LangExtractConfig(BaseModel):
+    prompt: str = Field(..., description="抽取任务的指令")
+    # 命名沿用“extractions”，但其结构为 few-shot 示例集合
+    extractions: List[LXExampleData] = Field(default_factory=list, description="few-shot 示例集合")
+
+
 class FileProcessRequest(BaseModel):
     """文件处理请求模型"""
     
@@ -207,6 +225,12 @@ class FileProcessRequest(BaseModel):
     task_id: str = Field(..., description="任务ID，用于跟踪处理进度")
     purpose: ProcessingPurpose = Field(..., description="读取文件的目的")
     target_format: OutputFormat = Field(..., description="目标输出格式")
+    # 信息抽取开关与配置（与现有风格一致：enable_xxx + xxx_config）
+    enable_extract: bool = Field(default=False, description="是否启用基于 LangExtract 的信息抽取")
+    extract_config: Optional[LangExtractConfig] = Field(
+        default=None,
+        description="信息抽取配置（含 prompt 与 extractions）",
+    )
     
     # 可选参数
     table_precision: Optional[TablePrecision] = Field(
@@ -223,7 +247,7 @@ class FileProcessRequest(BaseModel):
     chunk_size: Optional[int] = Field(
         default=1000, 
         ge=100, 
-        le=10000, 
+        le=99999999, 
         description="分块大小（字符数）"
     )
     chunk_overlap: Optional[int] = Field(
@@ -298,6 +322,13 @@ class FileProcessRequest(BaseModel):
         except (TypeError, ValueError):
             raise ValueError("自定义参数必须是可以JSON序列化的")
         return v
+
+    @model_validator(mode='after')
+    def validate_extract_config(self):
+        # 开启时必须有配置
+        if self.enable_extract and self.extract_config is None:
+            raise ValueError("已开启 enable_extract，但未提供 extract_config")
+        return self
 
 
 class ProcessingOptions(BaseModel):

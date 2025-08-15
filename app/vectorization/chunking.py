@@ -92,29 +92,22 @@ def _by_max_tokens(
     return chunks
 
 
-def levelX_custom_delimiter_splitting(
+def level6_custom_delimiter_splitting(
     text: str, *, delimiter: str, config: Optional[ChunkingConfig] = None
 ) -> List[str]:
-    """按自定义分隔符切分，再进行尺寸规整。
+    """按自定义分隔符切分，完全按照delimiter边界切分，不受字数限制。
 
     - delimiter: 非空字符串，支持多字符。若为空则退化为整体文本。
-    - 行为：先以 delimiter split 得到片段，再调用 _by_max_tokens 做 size/overlap 窗口规整。
+    - 行为：完全按照delimiter进行切分，每发现一个delimiter就创建一个新的分块。
     """
     cfg = config or ChunkingConfig()
     if not delimiter:
-        return _windowed(text, size=cfg.chunk_size, overlap=cfg.chunk_overlap)
-    parts = text.split(delimiter)
-    # 重新拼接时把分隔符作为轻边界保留在段尾，便于还原
-    parts_with_boundary: List[str] = []
-    for idx, p in enumerate(parts):
-        if idx < len(parts) - 1:
-            parts_with_boundary.append(p + delimiter)
-        else:
-            parts_with_boundary.append(p)
-    # 为保证按分隔符返回最小粒度的块，对每个逻辑段单独进行窗口规整
-    chunks: List[str] = []
-    for segment in parts_with_boundary:
-        chunks.extend(_windowed(segment, size=cfg.chunk_size, overlap=cfg.chunk_overlap))
+        return [text]  # 如果没有分隔符，返回整个文本作为一个块
+    
+    # 使用split方法按delimiter切分，这样每发现一个delimiter就会创建一个新的分块
+    chunks = text.split(delimiter)
+    
+    # 返回所有分块，包括空块
     return chunks
 
 
@@ -503,8 +496,9 @@ def chunk_text(
 
     if strategy == "custom_delimiter_splitting":
         dconf = cfg_dict.get("custom_delimiter_config") or {}
-        delimiter = str(dconf.get("delimiter") or "").strip()
-        chunks = levelX_custom_delimiter_splitting(text, delimiter=delimiter, config=cfg)
+        delimiter = str(dconf.get("delimiter") or "")
+        # 不要strip()，因为delimiter可能包（如"\n\n"）
+        chunks = level6_custom_delimiter_splitting(text, delimiter=delimiter, config=cfg)
         return {"chunks": chunks, "derivatives": []}
 
     if strategy == "document_specific_splitting":
@@ -621,7 +615,7 @@ __all__ = [
     "level3_document_specific_splitting",
     "level4_semantic_splitting",
     "level5_agentic_splitting",
-    "levelX_custom_delimiter_splitting",
+    "level6_custom_delimiter_splitting",
     "bonus_alternative_representation",
 ]
 
@@ -662,6 +656,12 @@ __all__ = [
 # - 适用：对切分质量要求更高、可接受 LLM 成本的场景；或文本体裁差异较大、规则难以穷尽时。
 # - 优点：可结合任务上下文做更智能的切分决策；缺点：成本高、需要稳健的 JSON 解析与回退策略。
 #
+# Level 6: Custom Delimiter Splitting（自定义分隔符切分）
+# - 思路：按用户提供的分隔符进行切分，每发现一个分隔符就创建一个新的分块。
+# - 适用：希望按特定分隔符进行切分的场景。
+# - 优点：灵活性高，可以按任意分隔符进行切分。
+# - 缺点：需要用户提供分隔符，且分隔符不能为空。
+#
 # Bonus: Alternative Representation Chunking（替代表示/索引衍生物）
 # - 思路：在基础分块之外，额外抽取“可用于索引或 UI 呈现”的衍生表示，如：
 #         大纲（标题集合）、代码块列表、Markdown 表格列表等。
@@ -671,4 +671,4 @@ __all__ = [
 # 备注：
 # - 调度函数 chunk_text 会将 "auto" 策略映射为 "semantic_splitting"，以取得更均衡的默认效果。
 # - ChunkingConfig 中的 chunk_size 与 chunk_overlap 是所有等级的统一尺寸约束；
-#   不同等级在生成候选块后都会进行最终的尺寸规整与重叠处理。
+#   不同等级在生成候选块后都会进行最终的尺寸规整与重叠处理

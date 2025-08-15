@@ -218,6 +218,49 @@
 
 （已移除未实现项示例：数据清理、OCR、格式转换等）
 
+### 5. 信息抽取（基于 LangExtract）
+
+```json
+{
+  "task_id": "task_20241201_005",
+  "purpose": {"value": "content_reading"},
+  "target_format": {"value": "plain_text"},
+  "enable_extract": true,
+  "extract_config": {
+    "prompt": "请从文本中提取人物与事件，必须返回原文精确片段。",
+    "extractions": [
+      {
+        "text": "示例原文片段……",
+        "extractions": [
+          {"extraction_class": "人物", "extraction_text": "胡文容", "attributes": {"职务": "市政协党组书记、主席"}}
+        ]
+      }
+    ]
+  }
+}
+```
+
+响应体中的 `result_data.extraction` 将包含：
+
+```json
+{
+  "document_id": "doc_xxx",
+  "text_length": 1234,
+  "extractions": [
+    {
+      "extraction_class": "人物",
+      "extraction_text": "胡文容",
+      "char_interval": {"start_pos": 10, "end_pos": 13},
+      "alignment_status": "match_exact",
+      "extraction_index": 1,
+      "group_index": 0,
+      "description": null,
+      "attributes": {"职务": "市政协党组书记、主席"}
+    }
+  ]
+}
+```
+
 ## 参数说明
 
 ### ProcessingPurpose (处理目的)

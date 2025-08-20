@@ -162,6 +162,23 @@
 }
 ```
 
+### 2.7 Level 6+：custom_delimiter_splitting_with_chunk_size_and_leave_table_alone
+
+```json
+{
+  "task_id": "demo_ch_007",
+  "purpose": "content_reading",
+  "target_format": "markdown",
+  "enable_chunking": true,
+  "chunking_strategy": "custom_delimiter_splitting_with_chunk_size_and_leave_table_alone",
+  "chunk_size": 1000,
+  "chunk_overlap": 100,
+  "chunking_config": {
+    "custom_delimiter_config": {"delimiter": "\n\n"}
+  }
+}
+```
+
 ## 3. 摘要（Summary）
 
 ```json
@@ -177,6 +194,33 @@
 ```
 
 说明：当正文为空时，摘要短路为空；有内容则返回 `summary` 与 `summary_dict`。
+
+## 4. 分块策略说明
+
+### Level 6+: custom_delimiter_splitting_with_chunk_size_and_leave_table_alone
+
+这个策略是 `custom_delimiter_splitting` 的增强版本，具有以下特点：
+
+- **表格保持完整**：自动识别 markdown 表格并保持其完整性，不会被切分
+- **文本按分隔符切分**：其他文本按指定的分隔符进行切分
+- **智能合并处理**：切分后的文本段落进行智能合并，确保每块尽可能接近 `chunk_size`
+- **适用场景**：处理包含表格的 markdown 文档，希望保持表格结构的同时对文本进行分块
+
+**表格识别规则**：
+- 包含 `|` 字符的行
+- 下一行是分隔符行（如 `|-----|-----|`）
+- 后续包含 `|` 的数据行
+
+**智能合并规则**：
+- 按分隔符切分文本段落
+- 将相邻段落合并，直到接近目标 `chunk_size`
+- 如果合并后超过目标大小，则在新块中开始
+- 如果当前块太小（小于目标大小的50%），继续合并下一个段落
+
+**配置参数**：
+- `delimiter`：分隔符字符串（如 `"\n\n"` 表示按段落切分）
+- `chunk_size`：每个文本块的目标字符数
+- `chunk_overlap`：相邻文本块的重叠字符数（在智能合并中主要用于计算）
 
 ---
 

@@ -110,6 +110,163 @@ def level6_custom_delimiter_splitting(
     # 返回所有分块，包括空块
     return chunks
 
+def custom_delimiter_splitting_with_chunk_size_and_leave_table_alone(
+    text: str, *, delimiter: str, config: Optional[ChunkingConfig] = None
+) -> List[str]:
+    """按自定义分隔符切分，但保留markdown表格完整，其他文字智能合并到接近chunk_size。
+    
+    - delimiter: 非空字符串，支持多字符。若为空则退化为整体文本。
+    - 行为：识别markdown表格并保持完整，其他文字按delimiter切分后智能合并，确保每块尽可能接近chunk_size。
+    """
+    cfg = config or ChunkingConfig()
+    if not delimiter:
+        return [text]  # 如果没有分隔符，返回整个文本作为一个块
+    
+    lines = text.splitlines()
+    blocks: List[Tuple[str, str]] = []
+    
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        
+        # 识别markdown表格：包含|的行，且下一行是分隔符行
+        if "|" in line and i + 1 < n and re.match(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$", lines[i + 1]):
+            buf = [line, lines[i + 1]]
+            i += 2
+            # 继续收集表格行，直到遇到不包含|的行或空行
+            while i < n and ("|" in lines[i]) and lines[i].strip() != "":
+                buf.append(lines[i])
+                i += 1
+            blocks.append(("table", "\n".join(buf)))
+            continue
+        
+        # 其他内容按普通文本处理
+        buf = [line]
+        i += 1
+        while i < n and not ("|" in lines[i] and i + 1 < n and re.match(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$", lines[i + 1])):
+            buf.append(lines[i])
+            i += 1
+        if buf:
+            blocks.append(("text", "\n".join(buf)))
+    
+    # 按原始顺序处理每个块，保持顺序
+    chunks: List[str] = []
+    current_text_chunks: List[str] = []  # 当前正在合并的文本块
+    current_size = 0
+    
+    for block_type, content in blocks:
+        if block_type == "table":
+            # 如果之前有未处理的文本块，先处理它们
+            if current_text_chunks:
+                merged_chunks = _smart_merge_text_segments(current_text_chunks, cfg.chunk_size, cfg.chunk_overlap)
+                chunks.extend(merged_chunks)
+                current_text_chunks = []
+                current_size = 0
+            
+            # 表格保持完整，不进行切分
+            chunks.append(content)
+        else:
+            # 普通文本按delimiter切分
+            if delimiter in content:
+                text_chunks = content.split(delimiter)
+                for chunk in text_chunks:
+                    if chunk.strip():  # 跳过空块
+                        chunk_size = len(chunk.strip())
+                        
+                        # 如果当前块为空，直接添加
+                        if not current_text_chunks:
+                            current_text_chunks.append(chunk.strip())
+                            current_size = chunk_size
+                            continue
+                        
+                        # 计算添加这个段落后的总大小（包括分隔符）
+                        separator_size = 2  # "\n\n" 的长度
+                        new_size = current_size + separator_size + chunk_size
+                        
+                        # 如果添加后仍然小于等于目标大小，或者当前块太小（小于目标大小的50%），则添加
+                        if new_size <= cfg.chunk_size or current_size < cfg.chunk_size * 0.5:
+                            current_text_chunks.append(chunk.strip())
+                            current_size = new_size
+                        else:
+                            # 当前块已经足够大，保存并开始新块
+                            chunks.append("\n\n".join(current_text_chunks))
+                            current_text_chunks = [chunk.strip()]
+                            current_size = chunk_size
+            else:
+                # 如果没有找到delimiter，直接添加
+                if content.strip():
+                    chunk_size = len(content.strip())
+                    
+                    if not current_text_chunks:
+                        current_text_chunks.append(content.strip())
+                        current_size = chunk_size
+                    else:
+                        separator_size = 2
+                        new_size = current_size + separator_size + chunk_size
+                        
+                        if new_size <= cfg.chunk_size or current_size < cfg.chunk_size * 0.5:
+                            current_text_chunks.append(content.strip())
+                            current_size = new_size
+                        else:
+                            chunks.append("\n\n".join(current_text_chunks))
+                            current_text_chunks = [content.strip()]
+                            current_size = chunk_size
+    
+    # 处理最后剩余的文本块
+    if current_text_chunks:
+        merged_chunks = _smart_merge_text_segments(current_text_chunks, cfg.chunk_size, cfg.chunk_overlap)
+        chunks.extend(merged_chunks)
+    
+    return chunks
+
+
+def _smart_merge_text_segments(segments: List[str], target_size: int, overlap: int) -> List[str]:
+    """智能合并文本段落，确保每块尽可能接近target_size。
+    
+    Args:
+        segments: 文本段落列表
+        target_size: 目标块大小
+        overlap: 重叠大小（在这个实现中主要用于计算，实际合并时不使用）
+    
+    Returns:
+        合并后的文本块列表
+    """
+    if not segments:
+        return []
+    
+    chunks: List[str] = []
+    current_chunk: List[str] = []
+    current_size = 0
+    
+    for segment in segments:
+        segment_size = len(segment)
+        
+        # 如果当前块为空，直接添加
+        if not current_chunk:
+            current_chunk.append(segment)
+            current_size = segment_size
+            continue
+        
+        # 计算添加这个段落后的总大小（包括分隔符）
+        separator_size = 2  # "\n\n" 的长度
+        new_size = current_size + separator_size + segment_size
+        
+        # 如果添加后仍然小于等于目标大小，或者当前块太小（小于目标大小的50%），则添加
+        if new_size <= target_size or current_size < target_size * 0.5:
+            current_chunk.append(segment)
+            current_size = new_size
+        else:
+            # 当前块已经足够大，保存并开始新块
+            chunks.append("\n\n".join(current_chunk))
+            current_chunk = [segment]
+            current_size = segment_size
+    
+    # 处理最后一个块
+    if current_chunk:
+        chunks.append("\n\n".join(current_chunk))
+    
+    return chunks
 
 # -----------------------------
 # Interfaces
@@ -463,7 +620,8 @@ def chunk_text(
     - chunking_strategy_value: one of
       ["auto","character_splitting","recursive_character_splitting",
        "document_specific_splitting","semantic_splitting",
-       "agentic_splitting","alternative_representation_chunking"]
+       "agentic_splitting","alternative_representation_chunking",
+       "custom_delimiter_splitting","custom_delimiter_splitting_with_chunk_size_and_leave_table_alone"]
     - chunking_config: dict mirroring FileProcessRequest.chunking_config
     Returns: {"chunks": [...], "derivatives": [...]} (derivatives only for Bonus)
     """
@@ -499,6 +657,13 @@ def chunk_text(
         delimiter = str(dconf.get("delimiter") or "")
         # 不要strip()，因为delimiter可能包（如"\n\n"）
         chunks = level6_custom_delimiter_splitting(text, delimiter=delimiter, config=cfg)
+        return {"chunks": chunks, "derivatives": []}
+
+    if strategy == "custom_delimiter_splitting_with_chunk_size_and_leave_table_alone":
+        dconf = cfg_dict.get("custom_delimiter_config") or {}
+        delimiter = str(dconf.get("delimiter") or "")
+        # 不要strip()，因为delimiter可能包（如"\n\n"）
+        chunks = custom_delimiter_splitting_with_chunk_size_and_leave_table_alone(text, delimiter=delimiter, config=cfg)
         return {"chunks": chunks, "derivatives": []}
 
     if strategy == "document_specific_splitting":
@@ -616,6 +781,7 @@ __all__ = [
     "level4_semantic_splitting",
     "level5_agentic_splitting",
     "level6_custom_delimiter_splitting",
+    "custom_delimiter_splitting_with_chunk_size_and_leave_table_alone",
     "bonus_alternative_representation",
 ]
 
@@ -660,7 +826,7 @@ __all__ = [
 # - 思路：按用户提供的分隔符进行切分，每发现一个分隔符就创建一个新的分块。
 # - 适用：希望按特定分隔符进行切分的场景。
 # - 优点：灵活性高，可以按任意分隔符进行切分。
-# - 缺点：需要用户提供分隔符，且分隔符不能为空。
+# - 缺点：需要用户提供分隔符，且分隔符不能为空,并且没有chunk的字数限制。
 #
 # Bonus: Alternative Representation Chunking（替代表示/索引衍生物）
 # - 思路：在基础分块之外，额外抽取“可用于索引或 UI 呈现”的衍生表示，如：

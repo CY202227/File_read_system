@@ -1,0 +1,230 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import List
+from PIL import Image
+
+import fitz  # PyMuPDF
+from openai import OpenAI
+
+from config.settings import settings
+from app.ocr.prompts import dict_promptmode_to_prompt
+from config.logging_config import get_logger
+from app.utils.log_utils import log_call
+
+
+logger = get_logger(__name__)
+
+
+class OCRReader:
+    """OCR文本识别读取器，用于从PDF和图片文件中提取文本。"""
+    
+    def __init__(self, ocr_mode: str = "prompt_ocr"):
+        """初始化OCR读取器。
+        
+        Args:
+            ocr_mode: OCR模式，可选值为prompts.py中定义的模式
+        """
+        self.ocr_mode = ocr_mode
+        self.client = OpenAI(
+            base_url=settings.OCR_MODEL_URL,
+            api_key=settings.OCR_MODEL_API_KEY
+        )
+    
+    @log_call
+    def fitz_doc_to_image(self, doc, target_dpi=200) -> Image.Image:
+        """将fitz.Document转换为PIL Image。
+        
+        Args:
+            doc: pymudoc页面
+            target_dpi: 目标DPI，默认为200
+            
+        Returns:
+            PIL Image对象
+        """
+        mat = fitz.Matrix(target_dpi / 72, target_dpi / 72)
+        pm = doc.get_pixmap(matrix=mat, alpha=False)
+        
+        # 如果图像太大，使用默认DPI
+        if pm.width > 4500 or pm.height > 4500:
+            logger.info("图像尺寸过大，使用默认DPI")
+            mat = fitz.Matrix(72 / 72, 72 / 72)  # 使用fitz默认dpi
+            pm = doc.get_pixmap(matrix=mat, alpha=False)
+            
+        image = Image.frombytes('RGB', (pm.width, pm.height), pm.samples)
+        return image
+    
+    @log_call
+    def load_images_from_pdf(self, pdf_file: str, dpi=200, start_page_id=0, end_page_id=None) -> List[Image.Image]:
+        """从PDF文件加载图像。
+        
+        Args:
+            pdf_file: PDF文件路径
+            dpi: 目标DPI
+            start_page_id: 起始页码
+            end_page_id: 结束页码
+            
+        Returns:
+            图像列表
+        """
+        images = []
+        try:
+            with fitz.open(pdf_file) as doc:
+                pdf_page_num = doc.page_count
+                end_page_id = (
+                    end_page_id
+                    if end_page_id is not None and end_page_id >= 0
+                    else pdf_page_num - 1
+                )
+                if end_page_id > pdf_page_num - 1:
+                    logger.warning("结束页码超出范围，使用最大页码: %s", pdf_page_num - 1)
+                    end_page_id = pdf_page_num - 1
+                    
+                for index in range(0, doc.page_count):
+                    if start_page_id <= index <= end_page_id:
+                        page = doc[index]
+                        img = self.fitz_doc_to_image(page, target_dpi=dpi)
+                        images.append(img)
+            logger.info("从PDF加载了%s页图像", len(images))
+            return images
+        except Exception as e:
+            logger.error("加载PDF图像失败: %s", e)
+            raise
+    
+    @log_call
+    def process_image_with_ocr(self, image: Image.Image) -> str:
+        """使用OCR处理图像并返回文本内容。
+        
+        Args:
+            image: PIL Image对象
+            
+        Returns:
+            OCR识别的文本
+        """
+        # 准备静态文件目录保存图像
+        static_dir = Path(settings.STATIC_DIR) / "ocr_temp"
+        static_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 生成唯一文件名
+        import uuid
+        image_filename = f"ocr_image_{uuid.uuid4().hex}.png"
+        image_path = static_dir / image_filename
+        
+        # 保存图像
+        image.save(image_path)
+        
+        try:
+            logger.info("开始OCR处理，模式: %s", self.ocr_mode)
+            # 构建OCR请求，使用完整的静态文件URL
+            base_url = f"http://{settings.HOST}:{settings.PORT}"
+            image_url = f"{base_url}/static/ocr_temp/{image_filename}"
+            response = self.client.chat.completions.create(
+                model="ocr",
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": dict_promptmode_to_prompt[self.ocr_mode]},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": image_url,
+                            },
+                        },
+                    ],
+                }],
+            )
+            
+            # 提取OCR结果
+            ocr_text = response.choices[0].message.content or ""
+            logger.debug("OCR处理完成，获取到%s字符", len(ocr_text))
+            return ocr_text
+        except Exception as e:
+            logger.error("OCR处理失败: %s", e)
+            raise
+        finally:
+            # 清理临时文件
+            if image_path.exists():
+                image_path.unlink()
+    
+    @log_call
+    def read_pdf_with_ocr(self, file_path: str, dpi: int = 200) -> str:
+        """使用OCR读取PDF文件内容。
+        
+        Args:
+            file_path: PDF文件路径
+            dpi: 图像DPI
+            
+        Returns:
+            OCR识别的文本内容
+        """
+        logger.info("开始OCR处理PDF: %s", file_path)
+        images = self.load_images_from_pdf(file_path, dpi=dpi)
+        texts = []
+        
+        for i, image in enumerate(images):
+            logger.info("处理PDF第%s/%s页", i+1, len(images))
+            page_text = self.process_image_with_ocr(image)
+            texts.append(page_text)
+            
+        return "\n\n".join(texts)
+    
+    @log_call
+    def read_image_with_ocr(self, file_path: str) -> str:
+        """使用OCR读取图像文件内容。
+        
+        Args:
+            file_path: 图像文件路径
+            
+        Returns:
+            OCR识别的文本内容
+        """
+        logger.info("开始OCR处理图像: %s", file_path)
+        try:
+            image = Image.open(file_path)
+            return self.process_image_with_ocr(image)
+        except Exception as e:
+            logger.error("处理图像文件失败: %s", e)
+            raise
+    
+    @staticmethod
+    def get_supported_extensions() -> List[str]:
+        """获取OCR支持的文件扩展名列表。
+        
+        Returns:
+            支持的文件扩展名列表
+        """
+        return [f".{ext}" for ext in settings.OCR_SUPPORTED_EXTENSIONS]
+    
+    @log_call
+    def read_file_with_ocr(self, file_path: str) -> str:
+        """根据文件类型使用OCR读取文件内容。
+        
+        Args:
+            file_path: 文件路径
+            
+        Returns:
+            OCR识别的文本内容
+        """
+        path = Path(file_path)
+        suffix = path.suffix.lower()
+        
+        if not path.exists() or not path.is_file():
+            logger.error("文件不存在: %s", file_path)
+            raise FileNotFoundError(f"文件不存在: {file_path}")
+            
+        # 检查文件类型
+        supported_extensions = self.get_supported_extensions()
+        if suffix not in supported_extensions:
+            logger.error("不支持的OCR文件类型: %s", suffix)
+            raise ValueError(f"不支持的OCR文件类型: {suffix}")
+        
+        try:
+            # PDF文件
+            if suffix == ".pdf":
+                return self.read_pdf_with_ocr(file_path)
+            
+            # 图像文件
+            return self.read_image_with_ocr(file_path)
+        except Exception as e:
+            logger.error("OCR处理失败: %s", e)
+            raise

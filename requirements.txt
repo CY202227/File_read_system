@@ -25,6 +25,7 @@ python-pptx      # PPTX解析
 
 
 # OCR相关
+PyMuPDF          # PDF处理库(fitz)
 
 
 # 自然语言处理
@@ -73,3 +74,4 @@ requests         # HTTP请求
 
 #AI相关
 openai           # OpenAI
+langextract      # Google 信息抽取

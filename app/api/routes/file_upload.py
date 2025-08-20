@@ -261,3 +261,6 @@ async def upload_files_by_path(
             status_code=500,
             detail=error_detail
         )
+
+
+#upload 需要支持纯文本上传

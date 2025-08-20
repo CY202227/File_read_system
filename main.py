@@ -55,6 +55,7 @@ async def lifespan(app: FastAPI):
     os.makedirs("uploads", exist_ok=True)
     os.makedirs("temp", exist_ok=True)
     os.makedirs("static/uploads", exist_ok=True)
+    os.makedirs("static/ocr_temp", exist_ok=True)
     
     print("📁 目录结构初始化完成")
     print(f"🌐 服务将在 http://localhost:{settings.PORT} 启动")

@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     
     # 服务器设置
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    PORT: int = 5015
     
     # CORS设置
     ALLOWED_ORIGINS: List[str] = [
@@ -44,6 +44,10 @@ class Settings(BaseSettings):
         # 音频文件
         "mp4","mp3","wav","flac"
     ]
+    # OCR支持的文件格式
+    OCR_SUPPORTED_EXTENSIONS: List[str] = [
+        "pdf", "png", "jpg", "jpeg", "bmp", "tiff", "tif"
+    ]
     MEDIA_EXTENSIONS: List[str] = [
         "mp4","mp3","wav","flac"
     ]
@@ -58,7 +62,6 @@ class Settings(BaseSettings):
     MAX_CHUNK_SIZE: int = 4000  # tokens
     
     # 任务队列设置
-    REDIS_URL: str = "redis://localhost:6379/0"
     TASK_TIMEOUT: int = 300  # 5分钟
     
     # 日志设置
@@ -80,6 +83,11 @@ class Settings(BaseSettings):
     
     # OFD/WPS 远端转换服务设置
     ofd_api_url: str = os.getenv("OFD_API_URL", "")
+
+    #OCR设置
+    OCR_MODEL_URL: str = os.getenv("OCR_MODEL_URL", "")
+    OCR_MODEL_API_KEY: str = os.getenv("OCR_MODEL_API_KEY", "")
+    OCR_MODEL_NAME: str = os.getenv("OCR_MODEL_NAME", "")
     
     # Pydantic v2 settings configuration
     model_config = SettingsConfigDict(

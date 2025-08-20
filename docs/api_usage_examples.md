@@ -189,7 +189,6 @@
 }
 ```
 
-
 ### 4. 多文件总结
 
 ```json
@@ -203,7 +202,6 @@
 }
 ```
 
- 
 ### 4.1 Summary 响应控制（Top-K）
 
 ```json
@@ -265,9 +263,7 @@
 
 ### ProcessingPurpose (处理目的)
 
-- `format_conversion`: 转换文件格式
 - `content_reading`: 读取文件内容
-- `both`: 两者都要
 
 ### OutputFormat (输出格式)
 
@@ -275,10 +271,9 @@
 
 ### ContentReturnFormat (内容返回格式)
 
-- `structured`: 结构化数据（表格、列表等）
+- `dataframe`: 结构化数据（表格）
 - `plain_text`: 纯文本
-- `mixed`: 混合格式
-- `original`: 保持原始格式
+- markdown: Markdown
 
 ### TablePrecision (表格精度)
 
@@ -318,21 +313,25 @@
 - 配置参数：llm_model, chunking_prompt, max_tokens_per_chunk
 
 #### Bonus Level: Alternative Representation Chunking (替代表示分块)
+
 - #### Level 6: Custom Delimiter Splitting（自定义分隔符）
 
   - `custom_delimiter_splitting`：按 `custom_delimiter_config.delimiter` 切分
   - 配置参数：`custom_delimiter_config.delimiter`（字符串，必填）
 
+#### Level 6+: Custom Delimiter Splitting with Table Preservation（自定义分隔符切分并保持表格完整）
 
+- `custom_delimiter_splitting_with_chunk_size_and_leave_table_alone`：按分隔符切分，但保持markdown表格完整
+- 配置参数：`custom_delimiter_config.delimiter`（字符串，必填）
+- 特点：
+
+  - 自动识别并保持 markdown 表格完整
+  - 其他文本按分隔符切分后，进行智能合并，确保每块尽可能接近 chunk_size
+  - 适用于包含表格的文档，确保表格结构不被破坏
+- 表格识别：包含 `|` 的行 + 分隔符行（如 `|-----|-----|`）+ 数据行
+- 智能合并：将相邻段落合并，直到接近目标大小
 - `alternative_representation_chunking`: 用于检索和索引的替代表示
 - 配置参数：representation_types, indexing_strategy, retrieval_optimized
-
-### DataCleaningLevel (数据清理级别)
-
-- `none`: 不清理
-- `basic`: 基础清理（去除多余空格、换行等）
-- `advanced`: 高级清理（去除噪声、格式化等）
-- `custom`: 自定义清理
 
 ### Summary 响应控制
 
@@ -393,6 +392,10 @@
 
    - 推荐：Bonus Level (alternative_representation_chunking)
    - 特点：生成多种表示形式，优化检索效果
+7. **处理包含表格的文档**
+
+   - 推荐：Level 6+ (custom_delimiter_splitting_with_chunk_size_and_leave_table_alone)
+   - 特点：保持表格完整，其他文本按分隔符和智能合并处理
 
 ## 性能考虑
 
@@ -400,6 +403,7 @@
 - **Level 3**: 中等复杂度，适合特定文档类型
 - **Level 4**: 需要计算嵌入，速度较慢但质量高
 - **Level 5**: 需要调用LLM，成本最高但效果最好
+- **Level 6+**: 表格识别和智能合并，适合包含表格的文档
 - **Bonus Level**: 生成多种表示，适合检索场景
 - 高精度设置会增加处理时间
 - 大文件建议启用分块处理

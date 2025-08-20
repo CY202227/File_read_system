@@ -68,6 +68,8 @@ class ChunkingStrategy(BaseModel):
             "alternative_representation_chunking",
             # Level 6: Custom Delimiter Splitting
             "custom_delimiter_splitting",
+            # Level 6+: Custom Delimiter Splitting with Table Preservation
+            "custom_delimiter_splitting_with_chunk_size_and_leave_table_alone",
         ]
         if v not in valid_values:
             raise ValueError(f"分块策略必须是以下之一: {valid_values}")
@@ -218,6 +220,18 @@ class LangExtractConfig(BaseModel):
     extractions: List[LXExampleData] = Field(default_factory=list, description="few-shot 示例集合")
 
 
+class OCRMode(BaseModel):
+    """OCR模式模型"""
+    value: str = Field(..., description="OCR模式值")
+    
+    @field_validator('value')
+    def validate_ocr_mode(cls, v):
+        valid_values = ["prompt_layout_all_en", "prompt_layout_only_en", "prompt_ocr", "prompt_grounding_ocr"]
+        if v not in valid_values:
+            raise ValueError(f"OCR模式必须是以下之一: {valid_values}")
+        return v
+
+
 class FileProcessRequest(BaseModel):
     """文件处理请求模型"""
     
@@ -230,6 +244,13 @@ class FileProcessRequest(BaseModel):
     extract_config: Optional[LangExtractConfig] = Field(
         default=None,
         description="信息抽取配置（含 prompt 与 extractions）",
+    )
+    
+    # OCR相关配置
+    enable_ocr: bool = Field(default=True, description="是否启用OCR文本识别")
+    ocr_mode: Optional[OCRMode] = Field(
+        default=OCRMode(value="prompt_ocr"),
+        description="OCR模式（prompt_ocr: 仅文本识别; prompt_layout_all_en: 包含布局信息)"
     )
     
     # 可选参数
@@ -293,7 +314,7 @@ class FileProcessRequest(BaseModel):
     )
     
     # 验证器
-    @field_validator('purpose', 'target_format', 'chunking_strategy', mode='before')
+    @field_validator('purpose', 'target_format', 'chunking_strategy', 'ocr_mode', mode='before')
     def coerce_value_models(cls, v):
         # 兼容纯字符串写法：自动包裹为 {"value": v}
         if isinstance(v, str):

@@ -262,6 +262,23 @@ file_read_system/
 }
 ```
 
+自定义分隔符分块并保持表格完整（Level 6+）
+
+```json
+{
+  "task_id": "task_xxx",
+  "purpose": "content_reading",
+  "target_format": "markdown",
+  "enable_chunking": true,
+  "chunking_strategy": "custom_delimiter_splitting_with_chunk_size_and_leave_table_alone",
+  "chunk_size": 1000,
+  "chunk_overlap": 100,
+  "chunking_config": {
+    "custom_delimiter_config": {"delimiter": "\n\n"}
+  }
+}
+```
+
 说明与约束
 
 - DataFrame 仅返回 `records`（list[dict]）或 `records_list`（多文件）。

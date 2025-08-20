@@ -216,6 +216,16 @@ class JobManager:
         target_format = self._get_value(request.get("target_format")) or "plain_text"
         if target_format == "text":
             target_format = "plain_text"
+            
+        # 获取OCR相关配置
+        enable_ocr = bool(request.get("enable_ocr", True))  # 默认开启
+        ocr_mode = "prompt_ocr"
+        if isinstance(request.get("ocr_mode"), dict):
+            ocr_mode = request.get("ocr_mode", {}).get("value") or "prompt_ocr"
+        else:
+            ocr_mode_val = request.get("ocr_mode")
+            if isinstance(ocr_mode_val, str):
+                ocr_mode = ocr_mode_val
 
         collected: List[Tuple[str, Any]] = []
         for f in files:
@@ -224,7 +234,12 @@ class JobManager:
                 continue
             fm = FileManager(fp)
             try:
-                text = fm.read_text(target_format=target_format, table_precision=table_precision)
+                text = fm.read_text(
+                    target_format=target_format, 
+                    table_precision=table_precision,
+                    enable_ocr=enable_ocr,
+                    ocr_mode=ocr_mode
+                )
                 collected.append((fp, text))
             except Exception as e:
                 # dataframe 仅支持表格类文件：对不支持的类型容错跳过

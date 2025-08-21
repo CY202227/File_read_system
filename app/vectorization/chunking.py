@@ -616,8 +616,6 @@ def _split_large_semantic_chunk(
                 overlap_text = current_chunk[-overlap:] if len(current_chunk) > overlap else current_chunk
                 current_chunk = overlap_text + " " + sentence
         else:
-                current_chunk = sentence
-        else:
             # 添加句子到当前chunk
             if current_chunk:
                 current_chunk += " " + sentence

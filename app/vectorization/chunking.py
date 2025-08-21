@@ -100,7 +100,6 @@ def level6_custom_delimiter_splitting(
     - delimiter: 非空字符串，支持多字符。若为空则退化为整体文本。
     - 行为：完全按照delimiter进行切分，每发现一个delimiter就创建一个新的分块。
     """
-    cfg = config or ChunkingConfig()
     if not delimiter:
         return [text]  # 如果没有分隔符，返回整个文本作为一个块
     
@@ -496,38 +495,140 @@ def level4_semantic_splitting(
     ai_client: Optional[AIClient] = None,
     config: Optional[ChunkingConfig] = None,
     similarity_drop_threshold: float = 0.25,
+    buffer_size: int = 1,
 ) -> List[str]:
+    """
+    Level 4: 语义分割
+    基于embedding语义相似度进行文本分割，保持语义相关内容在同一chunk中
+    
+    Args:
+        text: 要分割的文本
+        ai_client: AI客户端用于生成embeddings
+        config: 分割配置
+        similarity_drop_threshold: 语义相似度阈值，低于此值将产生分割点
+        buffer_size: 句子组合窗口大小，用于减少噪音
+    """
+    import re
+    import numpy as np
+    
     cfg = config or ChunkingConfig()
     client = ai_client or AIClient()
 
-    # Pre-split roughly, then merge by semantic walk
-    rough = level2_recursive_character_splitting(text, cfg)
-    # Further subdivide overly long items
-    normalized: List[str] = []
-    for r in rough:
-        if len(r) > cfg.chunk_size * 2:
-            normalized.extend(_windowed(r, size=cfg.chunk_size, overlap=cfg.chunk_overlap))
+    # 步骤1: 将文本分割为句子
+    # 基于句号、问号、感叹号分割
+    sentences = re.split(r'(?<=[.。？！?!])\s+', text.strip())
+    sentences = [s.strip() for s in sentences if s.strip()]
+    
+    if len(sentences) <= 1:
+        return [text]
+
+    # 步骤2: 创建句子组合窗口（减少噪音，增强语义连贯性）
+    combined_sentences = []
+    for i in range(len(sentences)):
+        # 组合当前句子及其前后buffer_size个句子
+        start_idx = max(0, i - buffer_size)
+        end_idx = min(len(sentences), i + buffer_size + 1)
+        combined = ' '.join(sentences[start_idx:end_idx])
+        combined_sentences.append({
+            'original_index': i,
+            'sentence': sentences[i],
+            'combined': combined
+        })
+
+    # 步骤3: 为组合句子生成embeddings
+    combined_texts = [item['combined'] for item in combined_sentences]
+    embeddings = client.embed_texts(combined_texts)
+    
+    # 将embeddings添加到句子数据中
+    for i, embedding in enumerate(embeddings):
+        combined_sentences[i]['embedding'] = embedding
+
+    # 步骤4: 计算相邻句子间的余弦距离，寻找语义边界
+    distances = []
+    for i in range(len(combined_sentences) - 1):
+        current_emb = combined_sentences[i]['embedding']
+        next_emb = combined_sentences[i + 1]['embedding']
+        
+        similarity = _cosine_similarity(current_emb, next_emb)
+        distance = 1 - similarity
+        distances.append(distance)
+        combined_sentences[i]['distance_to_next'] = distance
+
+    # 步骤5: 找到语义断点（距离高于阈值的位置）
+    # 使用百分位数作为动态阈值，避免硬编码阈值的问题
+    if distances:
+        percentile_threshold = float(np.percentile(distances, 95))
+        effective_threshold = max(similarity_drop_threshold, percentile_threshold)
+    else:
+        effective_threshold = similarity_drop_threshold
+    
+    # 语义边界点
+    boundary_indices = [0]  # 总是从0开始
+    for i, distance in enumerate(distances):
+        if distance > effective_threshold:
+            boundary_indices.append(i + 1)
+    boundary_indices.append(len(sentences))  # 总是在最后结束
+
+    # 步骤6: 根据语义边界合并句子成chunks
+    semantic_chunks = []
+    for start, end in zip(boundary_indices, boundary_indices[1:]):
+        chunk_sentences = sentences[start:end]
+        chunk_text = ' '.join(chunk_sentences)
+        
+        # 如果单个语义chunk太大，需要进一步分割但保持语义完整性
+        if len(chunk_text) > cfg.chunk_size * 2:
+            # 在语义chunk内部寻找次级分割点
+            sub_chunks = _split_large_semantic_chunk(
+                chunk_text, chunk_sentences, cfg.chunk_size, cfg.chunk_overlap
+            )
+            semantic_chunks.extend(sub_chunks)
         else:
-            normalized.append(r)
+            semantic_chunks.append(chunk_text)
 
-    if not normalized:
-        return []
+    return [chunk for chunk in semantic_chunks if chunk.strip()]
 
-    embeddings = client.embed_texts(normalized)
-    boundaries: List[int] = [0]
-    for i in range(1, len(normalized)):
-        prev_vec = embeddings[i - 1]
-        cur_vec = embeddings[i]
-        sim = _cosine_similarity(prev_vec, cur_vec)
-        if sim < similarity_drop_threshold:
-            boundaries.append(i)
-    boundaries.append(len(normalized))
 
-    chunks: List[str] = []
-    for start, end in zip(boundaries, boundaries[1:]):
-        merged = "".join(normalized[start:end])
-        chunks.extend(_windowed(merged, size=cfg.chunk_size, overlap=cfg.chunk_overlap))
-    return chunks
+def _split_large_semantic_chunk(
+    chunk_text: str, 
+    sentences: List[str], 
+    target_size: int, 
+    overlap: int
+) -> List[str]:
+    """
+    对过大的语义chunk进行二级分割，尽量保持句子完整性
+    """
+    if len(chunk_text) <= target_size:
+        return [chunk_text]
+    
+    sub_chunks = []
+    current_chunk = ""
+    
+    for sentence in sentences:
+        # 如果添加这个句子会超出目标大小
+        if current_chunk and len(current_chunk + " " + sentence) > target_size:
+            # 保存当前chunk
+            if current_chunk:
+                sub_chunks.append(current_chunk)
+            
+            # 开始新chunk，考虑overlap
+            if overlap > 0 and current_chunk:
+                # 保留最后几个字符作为overlap
+                overlap_text = current_chunk[-overlap:] if len(current_chunk) > overlap else current_chunk
+                current_chunk = overlap_text + " " + sentence
+        else:
+                current_chunk = sentence
+        else:
+            # 添加句子到当前chunk
+            if current_chunk:
+                current_chunk += " " + sentence
+            else:
+                current_chunk = sentence
+    
+    # 添加最后一个chunk
+    if current_chunk:
+        sub_chunks.append(current_chunk)
+    
+    return sub_chunks
 
 
 # --------------------------------------------------------------
@@ -689,8 +790,13 @@ def chunk_text(
             client = AIClient(embedding_model_name=emb_model)
         sim_th = sconf.get("similarity_threshold")
         similarity_drop = float(sim_th) if (sim_th is not None) else 0.25
+        buffer_sz = sconf.get("buffer_size", 1)  # 默认buffer_size=1
         chunks = level4_semantic_splitting(
-            text, ai_client=client, config=cfg, similarity_drop_threshold=similarity_drop
+            text, 
+            ai_client=client, 
+            config=cfg, 
+            similarity_drop_threshold=similarity_drop,
+            buffer_size=buffer_sz
         )
         return {"chunks": chunks, "derivatives": []}
 

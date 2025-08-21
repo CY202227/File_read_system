@@ -77,7 +77,7 @@ class FileManager:
 
     @log_call
     def read_text(self, *, target_format: str = "plain_text", table_precision: Optional[int] = None,
-                enable_ocr: bool = True, ocr_mode: str = "prompt_ocr") -> Union[str, pd.DataFrame, List[Dict[str, Any]]]:
+                enable_ocr: bool = True, ocr_mode: str = "prompt_ocr", task_id: Optional[str] = None) -> Union[str, pd.DataFrame, List[Dict[str, Any]]]:
         """根据目标输出格式分派到对应 reader 并返回纯文本。
 
         - target_format == "markdown" → 走 MarkdownRead（将任意受支持文件转为 Markdown 文本）
@@ -105,7 +105,7 @@ class FileManager:
             
             # 使用OCR处理文件
             try:
-                ocr_text = self.ocr_reader.read_file_with_ocr(self.file_path)
+                ocr_text = self.ocr_reader.read_file_with_ocr(self.file_path, task_id=task_id)
                 
                 # 将OCR结果保存为txt文件
                 output_dir = Path(settings.STATIC_DIR) / "ocr_results"

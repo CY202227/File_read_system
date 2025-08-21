@@ -4,6 +4,107 @@
 
 本文档展示了如何使用文件处理系统的JSON参数结构。所有参数都使用BaseModel形式，提供更好的类型安全和验证。
 
+接口路径：除“文件上传”路由外，文件处理主入口为 `POST /api/v1/file/process`。
+
+## 文件上传功能
+
+### 纯文本上传
+
+系统支持直接上传纯文本内容，支持自动格式检测和手动指定格式两种模式。
+
+#### 端点
+- `POST /api/v1/api/upload/text`
+
+#### 参数
+- `content`: 纯文本内容（必需）
+- `task_id`: 可选的任务ID，不提供则自动生成
+- `priority`: 任务优先级（1=低, 2=普通, 3=高, 4=紧急）
+- `auto_detect`: 格式检测模式
+  - `"auto"`: 自动检测文本格式（HTML、Markdown、纯文本等）
+  - `"manual"`: 使用指定的扩展名（需要提供extension参数）
+- `extension`: 手动模式下的文件扩展名（仅在auto_detect='manual'时需要）
+
+#### 格式检测规则
+- **HTML**: 检测到HTML标签（如 `<html>`, `<head>`, `<body>`, `<div>`, `<p>` 等）
+- **Markdown**: 检测到Markdown语法（标题、粗体、斜体、链接、列表等）
+- **纯文本**: 其他情况
+
+#### 使用示例
+
+**自动检测格式（推荐）**
+```bash
+curl -X POST "http://localhost:5015/api/v1/api/upload/text" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "# 这是Markdown内容",
+    "auto_detect": true
+  }'
+```
+
+**手动指定格式**
+```bash
+curl -X POST "http://localhost:5015/api/v1/api/upload/text" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "这是纯文本内容",
+    "auto_detect": false,
+    "extension": "txt"
+  }'
+```
+
+**HTML内容自动检测**
+```bash
+curl -X POST "http://localhost:5015/api/v1/api/upload/text" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "<!DOCTYPE html><html><body><h1>标题</h1></body></html>",
+    "auto_detect": true
+  }'
+```
+
+**手动指定HTML格式**
+```bash
+curl -X POST "http://localhost:5015/api/v1/api/upload/text" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "<div>HTML内容</div>",
+    "auto_detect": false,
+    "extension": "html"
+  }'
+```
+
+**指定优先级**
+```bash
+curl -X POST "http://localhost:5015/api/v1/api/upload/text" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "# 标题\n这是一个 Markdown 文档\n- 列表项1\n- 列表项2",
+    "priority": "3",
+    "auto_detect": true
+  }'
+```
+
+#### 响应格式
+```json
+{
+    "task_id": "uuid-string",
+    "total_files": 1,
+    "successful_uploads": 1,
+    "failed_uploads": 0,
+    "files": [
+        {
+            "file_uuid": "uuid-string",
+            "original_filename": "text_uuid-string.md",
+            "file_path": "uploads/task-id/uuid-string.md",
+            "file_size": 1234,
+            "status": "success",
+            "error_message": null
+        }
+    ],
+    "message": "文本内容上传成功，文件名: text_uuid-string.md"
+}
+```
+
 ## 基本参数结构
 
 ### 必需参数
@@ -304,7 +405,8 @@
 #### Level 4: Semantic Splitting (语义分块)
 
 - `semantic_splitting`: 基于嵌入的语义感知分块
-- 配置参数：embedding_model, similarity_threshold, min_chunk_size, max_chunk_size
+- 配置参数：embedding_model, similarity_threshold, buffer_size, min_chunk_size, max_chunk_size
+- `buffer_size`: 句子组合窗口大小（默认1），用于减少噪音并增强语义连贯性
 
 #### Level 5: Agentic Splitting (智能代理分块)
 

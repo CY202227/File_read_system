@@ -13,6 +13,15 @@ class FilePathRequest(BaseModel):
     task_id: Optional[str] = Field(None, description="可选的任务ID，如果不提供将自动生成")
 
 
+class TextUploadRequest(BaseModel):
+    """纯文本上传请求模型"""
+    content: str = Field(..., description="纯文本内容")
+    task_id: Optional[str] = Field(None, description="可选的任务ID，如果不提供将自动生成")
+    priority: Optional[str] = Field("2", description="任务优先级（1=低, 2=普通, 3=高, 4=紧急）")
+    auto_detect: bool = Field(True, description="是否自动检测文本格式（auto=true时自动检测，false时使用指定的扩展名）")
+    extension: Optional[str] = Field(None, description="手动模式下的文件扩展名（如：txt, md, html）")
+
+
 class FileUploadInfo(BaseModel):
     """文件上传信息"""
     file_uuid: str = Field(..., description="文件UUID")

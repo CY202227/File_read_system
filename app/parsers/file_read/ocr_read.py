@@ -26,10 +26,24 @@ class OCRReader:
             ocr_mode: OCR模式，可选值为prompts.py中定义的模式
         """
         self.ocr_mode = ocr_mode
-        self.client = OpenAI(
-            base_url=settings.OCR_MODEL_URL,
-            api_key=settings.OCR_MODEL_API_KEY
-        )
+        
+        # 验证OCR配置
+        if not settings.OCR_MODEL_URL:
+            raise ValueError("OCR_MODEL_URL 环境变量未设置")
+        if not settings.OCR_MODEL_API_KEY:
+            raise ValueError("OCR_MODEL_API_KEY 环境变量未设置")
+            
+        logger.info("初始化OCR客户端，URL: %s", settings.OCR_MODEL_URL)
+        
+        try:
+            self.client = OpenAI(
+                base_url=settings.OCR_MODEL_URL,
+                api_key=settings.OCR_MODEL_API_KEY
+            )
+            logger.info("OCR客户端初始化成功")
+        except Exception as e:
+            logger.error("OCR客户端初始化失败: %s", e)
+            raise ValueError(f"OCR客户端初始化失败: {e}")
     
     @log_call
     def fitz_doc_to_image(self, doc, target_dpi=200) -> Image.Image:
@@ -92,32 +106,50 @@ class OCRReader:
             raise
     
     @log_call
-    def process_image_with_ocr(self, image: Image.Image) -> str:
+    def process_image_with_ocr(self, image: Image.Image, task_id: str = None) -> str:
         """使用OCR处理图像并返回文本内容。
         
         Args:
             image: PIL Image对象
+            task_id: 任务ID，用于创建子目录
             
         Returns:
             OCR识别的文本
         """
         # 准备静态文件目录保存图像
         static_dir = Path(settings.STATIC_DIR) / "ocr_temp"
-        static_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 如果有任务ID，创建子目录
+        if task_id:
+            task_dir = static_dir / task_id
+            task_dir.mkdir(parents=True, exist_ok=True)
+            save_dir = task_dir
+        else:
+            save_dir = static_dir
+            save_dir.mkdir(parents=True, exist_ok=True)
         
         # 生成唯一文件名
         import uuid
         image_filename = f"ocr_image_{uuid.uuid4().hex}.png"
-        image_path = static_dir / image_filename
+        image_path = save_dir / image_filename
         
         # 保存图像
         image.save(image_path)
+        logger.info("图片已保存到: %s", image_path)
         
         try:
             logger.info("开始OCR处理，模式: %s", self.ocr_mode)
             # 构建OCR请求，使用完整的静态文件URL
-            base_url = f"http://{settings.HOST}:{settings.PORT}"
-            image_url = f"{base_url}/static/ocr_temp/{image_filename}"
+            base_url = f"{settings.FULL_URL}"
+            
+            # 构建图片URL路径
+            if task_id:
+                image_url = f"{base_url}/static/ocr_temp/{task_id}/{image_filename}"
+            else:
+                image_url = f"{base_url}/static/ocr_temp/{image_filename}"
+                
+            logger.info("图片URL: %s", image_url)
+            
             response = self.client.chat.completions.create(
                 model="ocr",
                 messages=[{
@@ -139,20 +171,19 @@ class OCRReader:
             logger.debug("OCR处理完成，获取到%s字符", len(ocr_text))
             return ocr_text
         except Exception as e:
-            logger.error("OCR处理失败: %s", e)
-            raise
-        finally:
-            # 清理临时文件
-            if image_path.exists():
-                image_path.unlink()
+            logger.error("OCR处理失败: %s", str(e))
+            logger.error("OCR服务URL: %s", settings.OCR_MODEL_URL)
+            logger.error("图片文件路径: %s", image_path)
+            raise RuntimeError(f"OCR处理失败: {str(e)}")
     
     @log_call
-    def read_pdf_with_ocr(self, file_path: str, dpi: int = 200) -> str:
+    def read_pdf_with_ocr(self, file_path: str, dpi: int = 200, task_id: str = None) -> str:
         """使用OCR读取PDF文件内容。
         
         Args:
             file_path: PDF文件路径
             dpi: 图像DPI
+            task_id: 任务ID，用于组织图片文件
             
         Returns:
             OCR识别的文本内容
@@ -163,17 +194,18 @@ class OCRReader:
         
         for i, image in enumerate(images):
             logger.info("处理PDF第%s/%s页", i+1, len(images))
-            page_text = self.process_image_with_ocr(image)
+            page_text = self.process_image_with_ocr(image, task_id=task_id)
             texts.append(page_text)
             
         return "\n\n".join(texts)
     
     @log_call
-    def read_image_with_ocr(self, file_path: str) -> str:
+    def read_image_with_ocr(self, file_path: str, task_id: str = None) -> str:
         """使用OCR读取图像文件内容。
         
         Args:
             file_path: 图像文件路径
+            task_id: 任务ID，用于组织图片文件
             
         Returns:
             OCR识别的文本内容
@@ -181,7 +213,7 @@ class OCRReader:
         logger.info("开始OCR处理图像: %s", file_path)
         try:
             image = Image.open(file_path)
-            return self.process_image_with_ocr(image)
+            return self.process_image_with_ocr(image, task_id=task_id)
         except Exception as e:
             logger.error("处理图像文件失败: %s", e)
             raise
@@ -196,11 +228,12 @@ class OCRReader:
         return [f".{ext}" for ext in settings.OCR_SUPPORTED_EXTENSIONS]
     
     @log_call
-    def read_file_with_ocr(self, file_path: str) -> str:
+    def read_file_with_ocr(self, file_path: str, task_id: str = None) -> str:
         """根据文件类型使用OCR读取文件内容。
         
         Args:
             file_path: 文件路径
+            task_id: 任务ID，用于组织图片文件
             
         Returns:
             OCR识别的文本内容
@@ -221,10 +254,10 @@ class OCRReader:
         try:
             # PDF文件
             if suffix == ".pdf":
-                return self.read_pdf_with_ocr(file_path)
+                return self.read_pdf_with_ocr(file_path, task_id=task_id)
             
             # 图像文件
-            return self.read_image_with_ocr(file_path)
+            return self.read_image_with_ocr(file_path, task_id=task_id)
         except Exception as e:
             logger.error("OCR处理失败: %s", e)
             raise

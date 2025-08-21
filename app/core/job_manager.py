@@ -238,7 +238,8 @@ class JobManager:
                     target_format=target_format, 
                     table_precision=table_precision,
                     enable_ocr=enable_ocr,
-                    ocr_mode=ocr_mode
+                    ocr_mode=ocr_mode,
+                    task_id=task_id
                 )
                 collected.append((fp, text))
             except Exception as e:

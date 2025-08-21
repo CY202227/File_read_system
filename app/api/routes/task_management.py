@@ -11,7 +11,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from enum import Enum
 
-router = APIRouter(prefix="/api", tags=["任务管理"])
+router = APIRouter(tags=["任务管理"])
 
 # temp目录路径
 TEMP_DIR = Path("temp")

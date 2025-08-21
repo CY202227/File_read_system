@@ -109,6 +109,9 @@ class SemanticSplittingConfig(BaseModel):
     similarity_threshold: float = Field(
         default=0.25, ge=0.0, le=1.0, description="相邻块相似度阈值，低于该值将切分"
     )
+    buffer_size: int = Field(
+        default=1, ge=1, le=5, description="句子组合窗口大小，用于减少噪音并增强语义连贯性"
+    )
     min_chunk_size: Optional[int] = Field(
         default=None, ge=1, description="可选：每块最小字符数（不填则使用全局 chunk_size 逻辑）"
     )

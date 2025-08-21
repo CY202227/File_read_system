@@ -88,6 +88,8 @@ class Settings(BaseSettings):
     OCR_MODEL_URL: str = os.getenv("OCR_MODEL_URL", "")
     OCR_MODEL_API_KEY: str = os.getenv("OCR_MODEL_API_KEY", "")
     OCR_MODEL_NAME: str = os.getenv("OCR_MODEL_NAME", "")
+
+    FULL_URL: str = os.getenv("FULL_URL", "")
     
     # Pydantic v2 settings configuration
     model_config = SettingsConfigDict(

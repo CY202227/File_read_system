@@ -27,6 +27,7 @@ temp/
 # Uploads and generated static
 uploads/
 static/converted/
+static/
 
 # Jupyter
 .ipynb_checkpoints/

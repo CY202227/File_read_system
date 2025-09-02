@@ -75,3 +75,6 @@ requests         # HTTP请求
 #AI相关
 openai           # OpenAI
 langextract      # Google 信息抽取
+
+# OFD处理相关
+xmltodict        # XML解析

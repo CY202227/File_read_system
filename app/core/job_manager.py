@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional, List, Tuple
 import asyncio
 import functools
 import inspect
+import time
 
 from config.logging_config import get_logger
 from app.core.task_manager import task_manager as tm, TaskStatus
@@ -91,7 +92,15 @@ class JobManager:
 
         # 标记处理开始
         try:
+            start_ts = time.time()
             tm.update_task_status(task_id, TaskStatus.PROCESSING)
+            # 若未设置 started_at，则由 kwargs 显式写入，确保可回算耗时
+            try:
+                doc = tm.get_task(task_id)
+                if not doc.get("started_at"):
+                    tm.update_task_status(task_id, TaskStatus.PROCESSING, started_at=None)
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -175,7 +184,22 @@ class JobManager:
 
             # 将结果同时写入分段与顶层，保证查询与直返一致
             tm.update_section(task_id, "process_json", {"result": result_payload})
-            tm.update_task_status(task_id, TaskStatus.COMPLETED, result=result_payload)
+            # 计算耗时并写入
+            try:
+                elapsed = None
+                try:
+                    elapsed = max(0.0, time.time() - start_ts)
+                except Exception:
+                    elapsed = None
+                tm.update_task_status(
+                    task_id,
+                    TaskStatus.COMPLETED,
+                    result=result_payload,
+                    processing_time=elapsed,
+                    progress={"percent": 100.0},
+                )
+            except Exception:
+                tm.update_task_status(task_id, TaskStatus.COMPLETED, result=result_payload)
         except Exception:
             self._fail(task_id, f"Unhandled error: {traceback.format_exc()}")
             return
@@ -226,6 +250,9 @@ class JobManager:
             ocr_mode_val = request.get("ocr_mode")
             if isinstance(ocr_mode_val, str):
                 ocr_mode = ocr_mode_val
+                
+        self.logger.info("OCR配置: task_id=%s, enable_ocr=%s, ocr_mode=%s, request=%s", 
+                         task_id, enable_ocr, ocr_mode, request)
 
         collected: List[Tuple[str, Any]] = []
         for f in files:

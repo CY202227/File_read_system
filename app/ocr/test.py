@@ -4,7 +4,6 @@ import numpy as np
 import enum
 from pydantic import BaseModel, Field
 from PIL import Image
-from prompts import dict_promptmode_to_prompt
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -88,3 +87,58 @@ def load_images_from_pdf(pdf_file, dpi=200, start_page_id=0, end_page_id=None) -
 # )
 
 # print(response.choices[0].message.content)
+
+# 测试并发OCR处理和Base64编码
+if __name__ == "__main__":
+    import time
+    from app.parsers.file_read.ocr_read import OCRReader
+    from PIL import Image
+    import io
+
+    # 创建OCR读取器
+    ocr_reader = OCRReader(ocr_mode="prompt_ocr")
+
+    print("=== 测试Base64图片转换功能 ===")
+    # 创建一个测试图片
+    test_image = Image.new('RGB', (100, 100), color='red')
+
+    # 测试Base64转换
+    base64_str = ocr_reader.image_to_base64(test_image)
+    print(f"Base64字符串长度: {len(base64_str)}")
+    print(f"Base64前缀: {base64_str[:50]}...")
+
+    # 测试文件路径（请替换为实际的多页PDF文件路径）
+    test_pdf_path = "path/to/your/multi_page.pdf"  # 请替换为实际路径
+
+    if os.path.exists(test_pdf_path):
+        print("\n=== 测试并发OCR处理 ===")
+        print("开始测试并发OCR处理...")
+        start_time = time.time()
+
+        # 测试并发处理
+        result = ocr_reader.read_pdf_with_ocr(test_pdf_path, task_id="test_concurrent")
+
+        end_time = time.time()
+        print(".2f")
+        print(f"处理完成，文本长度: {len(result)}")
+
+        # 测试Base64模式
+        print("\n=== 测试Base64模式处理 ===")
+        start_time = time.time()
+
+        # 加载第一页进行Base64测试
+        images = ocr_reader.load_images_from_pdf(test_pdf_path, dpi=200)
+        if images:
+            result_base64 = ocr_reader.process_image_with_ocr(images[0], task_id="test_base64", use_base64=True)
+            end_time = time.time()
+            print(".2f")
+            print(f"Base64处理完成，文本长度: {len(result_base64)}")
+
+            # 对比URL模式
+            result_url = ocr_reader.process_image_with_ocr(images[0], task_id="test_url", use_base64=False)
+            end_time = time.time()
+            print(".2f")
+            print(f"URL处理完成，文本长度: {len(result_url)}")
+    else:
+        print("测试PDF文件不存在，请设置正确的路径")
+        print("但Base64功能测试已完成！")

@@ -24,6 +24,7 @@ from config.logging_config import setup_logging, get_logger
 from app.core.task_manager import task_manager
 
 
+
 async def _periodic_cleanup_task(stop_event: asyncio.Event) -> None:
     """后台定时清理任务：每24小时执行一次，删除一周前完成任务的源文件。"""
     logger = get_logger(__name__)

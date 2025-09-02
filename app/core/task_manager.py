@@ -191,13 +191,34 @@ class TaskManager:
         doc = self._load_task_from_json(task_id)
         result = doc.get("result") or {}
         sections = doc.get("sections") or {}
+        # 优先返回文档内显式的 processing_time；若不存在，尝试用时间戳推断
+        processing_time: Optional[float] = None
+        try:
+            explicit_pt = doc.get("processing_time")
+            if isinstance(explicit_pt, (int, float)):
+                processing_time = float(explicit_pt)
+            else:
+                started_at = doc.get("started_at")
+                completed_at = doc.get("completed_at")
+                if isinstance(started_at, str) and isinstance(completed_at, str):
+                    from datetime import datetime as _dt
+                    try:
+                        st = _dt.fromisoformat(started_at)
+                        ct = _dt.fromisoformat(completed_at)
+                        delta = (ct - st).total_seconds()
+                        if delta >= 0:
+                            processing_time = float(delta)
+                    except Exception:
+                        processing_time = None
+        except Exception:
+            processing_time = None
         return {
             "task_id": doc.get("task_id"),
             "status": doc.get("status"),
             "progress": (doc.get("progress") or {}).get("percent"),
             "result_url": result.get("url"),
             "result_data": result.get("data"),
-            "processing_time": None,  # TODO: 由处理流程写入耗时
+            "processing_time": processing_time,
             "file_info": sections.get("upload_file_json"),
             "error_message": (doc.get("errors") or {}).get("message") if doc.get("errors") else None,
             "error_details": doc.get("errors"),

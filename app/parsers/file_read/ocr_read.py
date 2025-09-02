@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from PIL import Image
+import concurrent.futures
+import threading
 
 import fitz  # PyMuPDF
 from openai import OpenAI
@@ -178,25 +180,80 @@ class OCRReader:
     
     @log_call
     def read_pdf_with_ocr(self, file_path: str, dpi: int = 200, task_id: str = None) -> str:
-        """使用OCR读取PDF文件内容。
-        
+        """使用OCR读取PDF文件内容（并发处理多页以提高性能）。
+
         Args:
             file_path: PDF文件路径
             dpi: 图像DPI
             task_id: 任务ID，用于组织图片文件
-            
+
         Returns:
             OCR识别的文本内容
         """
         logger.info("开始OCR处理PDF: %s", file_path)
         images = self.load_images_from_pdf(file_path, dpi=dpi)
+
+        if len(images) <= 1:
+            # 单页PDF，直接同步处理
+            logger.info("单页PDF，直接处理")
+            page_text = self.process_image_with_ocr(images[0], task_id=task_id)
+            return page_text
+
+        # 多页PDF，使用并发处理
+        logger.info("多页PDF，使用并发处理，共%s页", len(images))
+
+        # 限制并发数量，避免过多的并发请求
+        max_workers = min(len(images), 5)  # 最多5个并发请求
+
         texts = []
-        
-        for i, image in enumerate(images):
-            logger.info("处理PDF第%s/%s页", i+1, len(images))
-            page_text = self.process_image_with_ocr(image, task_id=task_id)
-            texts.append(page_text)
-            
+        page_numbers = list(range(len(images)))
+
+        def process_single_page(page_idx: int) -> tuple[int, str]:
+            """处理单页并返回页码和文本的元组"""
+            try:
+                logger.info("并发处理PDF第%s/%s页", page_idx + 1, len(images))
+                page_text = self.process_image_with_ocr(images[page_idx], task_id=task_id)
+                return (page_idx, page_text)
+            except Exception as e:
+                logger.error("第%s页OCR处理失败: %s", page_idx + 1, e)
+                return (page_idx, "")
+
+        try:
+            # 使用线程池并发处理
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # 提交所有任务
+                future_to_page = {
+                    executor.submit(process_single_page, page_idx): page_idx
+                    for page_idx in page_numbers
+                }
+
+                # 收集结果
+                page_results = []
+                for future in concurrent.futures.as_completed(future_to_page):
+                    try:
+                        page_idx, page_text = future.result()
+                        page_results.append((page_idx, page_text))
+                    except Exception as e:
+                        logger.error("并发任务执行失败: %s", e)
+
+                # 按页码排序结果
+                page_results.sort(key=lambda x: x[0])
+                texts = [text for _, text in page_results]
+
+        except Exception as e:
+            logger.warning("并发处理失败，回退到顺序处理: %s", e)
+            # 回退到顺序处理
+            texts = []
+            for i, image in enumerate(images):
+                logger.info("顺序处理PDF第%s/%s页", i+1, len(images))
+                try:
+                    page_text = self.process_image_with_ocr(image, task_id=task_id)
+                    texts.append(page_text)
+                except Exception as page_error:
+                    logger.error("第%s页OCR处理失败: %s", i+1, page_error)
+                    texts.append("")
+
+        logger.info("PDF OCR处理完成，共处理%s页", len(texts))
         return "\n\n".join(texts)
     
     @log_call
@@ -228,7 +285,7 @@ class OCRReader:
         return [f".{ext}" for ext in settings.OCR_SUPPORTED_EXTENSIONS]
     
     @log_call
-    def read_file_with_ocr(self, file_path: str, task_id: str = None) -> str:
+    def read_file_with_ocr(self, file_path: str, task_id: Optional[str] = None) -> str:
         """根据文件类型使用OCR读取文件内容。
         
         Args:

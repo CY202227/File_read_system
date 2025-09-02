@@ -9,6 +9,7 @@ from app.parsers.file_read.markdown_read import MarkdownRead
 from app.parsers.file_read.excel_read import ExcelRead
 from app.parsers.file_read.ocr_read import OCRReader
 from app.utils.log_utils import log_call
+from config.logging_config import get_logger
 
 
 
@@ -79,11 +80,16 @@ class FileManager:
     def read_text(self, *, target_format: str = "plain_text", table_precision: Optional[int] = None,
                 enable_ocr: bool = True, ocr_mode: str = "prompt_ocr", task_id: Optional[str] = None) -> Union[str, pd.DataFrame, List[Dict[str, Any]]]:
         """根据目标输出格式分派到对应 reader 并返回纯文本。
-
-        - target_format == "markdown" → 走 MarkdownRead（将任意受支持文件转为 Markdown 文本）
-        - target_format == "text" 或默认 → 走 plain_text_read（仅读取纯文本文件；非纯文本直接报不支持）
-        - 表格精度通过 pandas 选项进行前置设置
-        - 对于PDF和图片文件，可以启用OCR识别
+        
+        Args:
+            target_format: 目标格式，如markdown、plain_text、dataframe等
+            table_precision: 表格精度
+            enable_ocr: 是否启用OCR，默认为True
+            ocr_mode: OCR模式，默认为prompt_ocr
+            task_id: 任务ID
+            
+        Returns:
+            根据目标格式返回不同类型的结果
         """
         if table_precision is not None:
             try:
@@ -97,21 +103,30 @@ class FileManager:
         
         # 检查是否需要OCR处理
         is_ocr_candidate = suffix.lstrip(".") in settings.OCR_SUPPORTED_EXTENSIONS
+        logger = get_logger(__name__)
         
-        if enable_ocr and is_ocr_candidate:
+        # PDF文件必须使用OCR处理
+        is_pdf = suffix.lower() == ".pdf"
+        
+        if (enable_ocr and is_ocr_candidate) or is_pdf:
+            logger.info("开始OCR处理文件: %s, 文件类型: %s", self.file_path, suffix)
             # 延迟初始化OCR读取器
-            if self.ocr_reader is None:
-                self.ocr_reader = OCRReader(ocr_mode=ocr_mode)
-            
-            # 使用OCR处理文件
             try:
+                if self.ocr_reader is None:
+                    logger.info("初始化OCR读取器, 模式: %s", ocr_mode)
+                    self.ocr_reader = OCRReader(ocr_mode=ocr_mode)
+                
+                # 使用OCR处理文件
+                logger.info("调用OCR处理文件: %s", self.file_path)
                 ocr_text = self.ocr_reader.read_file_with_ocr(self.file_path, task_id=task_id)
+                logger.info("OCR处理成功, 获取到%s字符的文本", len(ocr_text))
                 
                 # 将OCR结果保存为txt文件
                 output_dir = Path(settings.STATIC_DIR) / "ocr_results"
                 output_dir.mkdir(parents=True, exist_ok=True)
                 output_file = output_dir / f"{p.stem}_ocr.txt"
                 output_file.write_text(ocr_text, encoding="utf-8")
+                logger.info("OCR结果已保存到: %s", output_file)
                 
                 # 如果目标格式是plain_text，直接返回OCR文本
                 if target_format == "plain_text":
@@ -120,8 +135,9 @@ class FileManager:
                 # 如果需要其他格式，使用保存的txt文件继续处理
                 self.file_path = str(output_file)
             except Exception as e:
-                # OCR失败时记录错误，但继续尝试常规方法
-                pass
+                # OCR失败时记录详细错误，但继续尝试常规方法
+                logger.error("OCR处理失败: %s", str(e))
+                logger.exception("OCR处理异常详情")
         
         # 常规处理流程
         if target_format == "markdown":

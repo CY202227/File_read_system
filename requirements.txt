@@ -78,3 +78,6 @@ langextract      # Google 信息抽取
 
 # OFD处理相关
 xmltodict        # XML解析
+
+# MCP相关
+fastmcp          # Model Context Protocol 服务器

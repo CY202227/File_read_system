@@ -239,5 +239,14 @@ def read_text(file_path: str, suffix: str) -> str:
     if normalized_suffix == ".pptx":
         return _read_pptx(file_path)
 
+    # 音频文件 - 直接调用音频读取器
+    audio_suffixes = {".mp3", ".wav", ".flac", ".mp4", ".m4a"}
+    if normalized_suffix in audio_suffixes:
+        try:
+            from app.parsers.file_read.audio_read import read_audio
+            return read_audio(file_path, normalized_suffix)
+        except Exception as e:
+            raise ValueError(f"音频文件处理失败: {str(e)}")
+
     raise ValueError(f"不支持的文件类型（plain_text）：{normalized_suffix}")
 

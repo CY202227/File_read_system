@@ -1,6 +1,5 @@
 from openai import OpenAI
 import fitz  # PyMuPDF
-import numpy as np
 import enum
 from pydantic import BaseModel, Field
 from PIL import Image
@@ -28,7 +27,7 @@ class PageInfo(BaseModel):
     h: float = Field(description='the height of page')
 
 
-def fitz_doc_to_image(doc, target_dpi=200, origin_dpi=None) -> dict:
+def fitz_doc_to_image(doc, target_dpi=200, origin_dpi=None) -> Image.Image:
     """Convert fitz.Document to image, Then convert the image to numpy array.
 
     Args:
@@ -93,7 +92,6 @@ if __name__ == "__main__":
     import time
     from app.parsers.file_read.ocr_read import OCRReader
     from PIL import Image
-    import io
 
     # 创建OCR读取器
     ocr_reader = OCRReader(ocr_mode="prompt_ocr")
@@ -108,7 +106,7 @@ if __name__ == "__main__":
     print(f"Base64前缀: {base64_str[:50]}...")
 
     # 测试文件路径（请替换为实际的多页PDF文件路径）
-    test_pdf_path = "path/to/your/multi_page.pdf"  # 请替换为实际路径
+    test_pdf_path = r"C:\Users\CHENQIMING\Desktop\e32bd897-9449-422c-b808-c9149dea214c.pdf"  # 请替换为实际路径
 
     if os.path.exists(test_pdf_path):
         print("\n=== 测试并发OCR处理 ===")
@@ -129,13 +127,13 @@ if __name__ == "__main__":
         # 加载第一页进行Base64测试
         images = ocr_reader.load_images_from_pdf(test_pdf_path, dpi=200)
         if images:
-            result_base64 = ocr_reader.process_image_with_ocr(images[0], task_id="test_base64", use_base64=True)
+            result_base64 = ocr_reader.process_image_with_ocr(images[0], task_id="test_base64")
             end_time = time.time()
             print(".2f")
             print(f"Base64处理完成，文本长度: {len(result_base64)}")
 
             # 对比URL模式
-            result_url = ocr_reader.process_image_with_ocr(images[0], task_id="test_url", use_base64=False)
+            result_url = ocr_reader.process_image_with_ocr(images[0], task_id="test_url")
             end_time = time.time()
             print(".2f")
             print(f"URL处理完成，文本长度: {len(result_url)}")

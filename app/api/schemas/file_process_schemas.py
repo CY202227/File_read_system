@@ -154,6 +154,14 @@ class AlternativeRepresentationConfig(BaseModel):
     include_tables: bool = Field(default=True, description="是否抽取表格")
 
 
+class CustomDelimiterConfig(BaseModel):
+    """Level 6: 自定义分隔符分块配置"""
+    delimiter: str = Field(
+        default="。",
+        description="自定义分隔符，支持中文字符和转义字符（\\n, \\t, \\r等）"
+    )
+
+
 class ChunkingConfig(BaseModel):
     """分块配置模型 - 支持6个等级的分块策略配置"""
 
@@ -185,6 +193,12 @@ class ChunkingConfig(BaseModel):
     agentic_splitting_config: Optional[AgenticSplittingConfig] = Field(
         default=None,
         description="Level 5: 智能代理分块配置，实验性方法"
+    )
+
+    # Level 6: Custom Delimiter Splitting 配置
+    custom_delimiter_config: Optional[CustomDelimiterConfig] = Field(
+        default=None,
+        description="Level 6: 自定义分隔符分块配置"
     )
 
     # Bonus Level: Alternative Representation Chunking 配置

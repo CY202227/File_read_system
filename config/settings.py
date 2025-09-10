@@ -90,7 +90,10 @@ class Settings(BaseSettings):
     OCR_MODEL_NAME: str = os.getenv("OCR_MODEL_NAME", "")
 
     FULL_URL: str = os.getenv("FULL_URL", "")
-    
+
+    # 音频API设置
+    AUDIO_API_URL: str = os.getenv("AUDIO_API_URL", "")
+
     # Pydantic v2 settings configuration
     model_config = SettingsConfigDict(
         env_file=".env",

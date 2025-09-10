@@ -158,10 +158,8 @@ class FileConverter:
 
     @fc_log_call
     def audio_file_convert_to_text(self, spilit_time) -> Tuple[bool, str]:
-        # 按照提供的唯一接口进行流式转写
-        url = "http://180.153.21.76:12119/custom_audio_to_text" + f"?spilit_time={spilit_time}"
-        headers = {"accept": "application/json"}
-        files_payload = None
+        """音频文件转换为文本"""
+        from app.parsers.file_read.audio_read import AudioReader
 
         try:
             # 输出到 temp/temp_file 目录下，文件名与源音频同名
@@ -169,64 +167,31 @@ class FileConverter:
             output_dir = os.path.join(settings.TEMP_DIR, "temp_file")
             os.makedirs(output_dir, exist_ok=True)
             output_path = os.path.join(output_dir, f"{stem}.txt")
-            logger.info(f"Processing local file path: {self.file_path}")
+
+            logger.info(f"Processing audio file: {self.file_path}")
+
+            # 验证文件存在
             if not os.path.exists(self.file_path):
                 raise ValueError(f"File not found at path: {self.file_path}")
             if not os.path.isfile(self.file_path):
                 raise ValueError(f"Path is not a file: {self.file_path}")
 
-            filename = os.path.basename(self.file_path)
-            guessed_type, _ = mimetypes.guess_type(self.file_path)
-            content_type = guessed_type if guessed_type else "application/octet-stream"
+            # 使用新的音频读取器
+            reader = AudioReader()
+            result = reader.read_audio(self.file_path)
 
-            with open(self.file_path, 'rb') as f_local:
-                file_content = f_local.read()
-            files_payload = {"file": (filename, file_content, content_type)}
-            logger.info(
-                f"Sending request to {url} with file: {files_payload['file'][0] if files_payload['file'][0] else 'unnamed file'}"
-            )
+            # 提取文本内容
+            text_content = result.get('text', '')
 
-            response = requests.post(url, headers=headers, files=files_payload, stream=True)  # type: ignore
-            response.raise_for_status()
-
-            # Ensure output directory exists
-            os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-
+            # 写入到输出文件
             with open(output_path, "w", encoding="utf-8") as out_fp:
-                decoder = json.JSONDecoder()
-                buffer = ""
-                for chunk in response.iter_content(chunk_size=1024):
-                    if not chunk:
-                        continue
-                    buffer += chunk.decode("utf-8", errors="ignore")
-                    while True:
-                        stripped = buffer.lstrip()
-                        if not stripped:
-                            buffer = ""
-                            break
-                        try:
-                            obj, idx = decoder.raw_decode(stripped)
-                        except json.JSONDecodeError:
-                            # 需要更多数据
-                            break
-                        # 处理已完整解码的 JSON 对象
-                        if isinstance(obj, dict):
-                            text_piece = obj.get("text")
-                            if isinstance(text_piece, str):
-                                out_fp.write(text_piece)
-                                out_fp.flush()
-                        # 推进缓冲区
-                        consumed = len(buffer) - len(stripped) + idx
-                        buffer = buffer[consumed:]
+                out_fp.write(text_content)
 
-            try:
-                response.close()
-            except Exception:
-                pass
+            logger.info(f"Audio conversion completed. Output saved to: {output_path}")
+            return True, output_path
 
         except Exception as e:
             logger.exception(f"Unexpected error in audio_file_convert_to_text: {str(e)}")
             raise ValueError(f"Internal server error: {str(e)}")
-        return True, output_path
 
 

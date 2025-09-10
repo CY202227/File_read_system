@@ -518,7 +518,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 - `summary_length` / `summary_focus` / `summary_return_top_k`
 - `custom_parameters`: 自定义参数（透传占位）
 
-## 使用示例
+## 使用示例(process接口)
 
 ### 1. 基础文件读取（plain_text）
 
@@ -729,12 +729,14 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 ##### 必需参数
 
 **`task_id`** (字符串，必需)
+
 - **含义**：任务的唯一标识符，就像给每个任务起的名字
 - **为什么需要**：系统需要知道你要处理哪个文件，这个ID就是"身份证"
 - **示例值**：`"task_20241201_001"` 或 `"my_document_001"`
 - **注意事项**：如果这个ID对应的文件还没有被读取过，系统会自动先读取文件
 
 **`extract_config`** (对象，必需)
+
 - **含义**：信息抽取的配置参数，包括抽取提示词和示例
 - **为什么需要**：系统需要知道你想抽取什么类型的信息，以及如何抽取
 - **组成部分**：
@@ -744,18 +746,22 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 ##### 可选参数
 
 **`purpose`** (对象，可选，默认值：`{"value": "content_reading"}`)
+
 - **含义**：读取文件的目的
 - **为什么需要**：主要用于日志记录和分析
 
 **`target_format`** (对象，可选，默认值：`{"value": "plain_text"}`)
+
 - **含义**：目标输出格式
 - **为什么需要**：指定文件内容的处理格式
 
 **`enable_ocr`** (布尔值，可选，默认值：`true`)
+
 - **含义**：是否启用OCR文本识别
 - **为什么需要**：处理图像文件或PDF时需要
 
 **`ocr_mode`** (对象，可选，默认值：`{"value": "prompt_ocr"}`)
+
 - **含义**：OCR模式
 - **为什么需要**：控制OCR的处理方式
 
@@ -783,6 +789,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 ```
 
 **说明**：这个例子演示了如何从文本中抽取人物信息：
+
 - 提供了一个简单的抽取提示词，要求抽取人物与事件
 - 提供了一个示例，告诉系统如何抽取人物及其属性
 
@@ -811,6 +818,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 ```
 
 **说明**：这个例子演示了如何同时抽取多种类型的信息：
+
 - 提示词要求抽取人物、组织机构和地点信息
 - 示例中展示了如何抽取多个实体及其属性
 
@@ -899,6 +907,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "character_splitting"},
   "chunk_size": 1000,
   "chunk_overlap": 200
@@ -932,6 +941,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "recursive_character_splitting"},
   "chunk_size": 1000,
   "chunk_overlap": 200,
@@ -971,6 +981,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "recursive_character_splitting"},
   "chunk_size": 1500,
   "chunk_overlap": 300,
@@ -987,6 +998,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "recursive_character_splitting"},
   "chunk_size": 800,
   "chunk_overlap": 150,
@@ -1021,6 +1033,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "document_specific_splitting"},
   "chunk_size": 1000,
   "chunk_overlap": 200,
@@ -1059,7 +1072,6 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
   - `"csharp"`：C#代码文件
   - `"go"`：Go代码文件
   - `"rust"`：Rust代码文件
-  - `"auto"`：自动检测文档类型（推荐）
 - `preserve_headers`（可选）：是否保持标题结构
 
   - `true`：保持标题完整，不在标题中间切分
@@ -1097,6 +1109,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "document_specific_splitting"},
   "chunk_size": 1200,
   "chunk_overlap": 250,
@@ -1116,6 +1129,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "document_specific_splitting"},
   "chunk_size": 800,
   "chunk_overlap": 150,
@@ -1123,25 +1137,6 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
     "document_specific_config": {
       "document_type": "python",
       "preserve_code_blocks": true
-    }
-  }
-}
-```
-
-**自动检测文档类型**：
-
-```json
-{
-  "chunking_strategy": {"value": "document_specific_splitting"},
-  "chunk_size": 1000,
-  "chunk_overlap": 200,
-  "chunking_config": {
-    "document_specific_config": {
-      "document_type": "auto",
-      "preserve_headers": true,
-      "preserve_code_blocks": true,
-      "preserve_lists": true,
-      "preserve_tables": true
     }
   }
 }
@@ -1169,6 +1164,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "semantic_splitting"},
   "chunk_size": 1000,
   "chunk_overlap": 200,
@@ -1238,6 +1234,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "semantic_splitting"},
   "chunk_size": 1200,
   "chunk_overlap": 250,
@@ -1258,6 +1255,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "semantic_splitting"},
   "chunk_size": 800,
   "chunk_overlap": 150,
@@ -1296,6 +1294,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "agentic_splitting"},
   "chunk_size": 1000,
   "chunk_overlap": 200,
@@ -1365,6 +1364,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "agentic_splitting"},
   "chunk_size": 1500,
   "chunk_overlap": 300,
@@ -1385,6 +1385,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "agentic_splitting"},
   "chunk_size": 800,
   "chunk_overlap": 150,
@@ -1405,6 +1406,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "agentic_splitting"},
   "chunk_size": 2000,
   "chunk_overlap": 400,
@@ -1442,15 +1444,13 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "custom_delimiter_splitting"},
   "chunk_size": 1000,
   "chunk_overlap": 200,
   "chunking_config": {
     "custom_delimiter_config": {
-      "delimiter": "——END——",
-      "include_delimiter": true,
-      "trim_whitespace": true,
-      "case_sensitive": false
+      "delimiter": "——END——"
     }
   }
 }
@@ -1476,21 +1476,6 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
     - `"###"`：Markdown标题分隔符
     - `"<hr>"`：HTML分隔线
     - `"---"`：YAML分隔符
-- `include_delimiter`（可选）：是否在切片中包含分隔符
-
-  - `true`：包含分隔符（推荐，保持文档完整性）
-  - `false`：不包含分隔符（分隔符会被删除）
-  - 默认值：`true`
-- `trim_whitespace`（可选）：是否去除分隔符前后的空白字符
-
-  - `true`：去除空白字符（推荐，保持切片整洁）
-  - `false`：保留空白字符
-  - 默认值：`true`
-- `case_sensitive`（可选）：是否区分大小写
-
-  - `true`：区分大小写，必须完全匹配
-  - `false`：不区分大小写，忽略大小写差异
-  - 默认值：`false`
 
 **配置示例**：
 
@@ -1498,6 +1483,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "custom_delimiter_splitting"},
   "chunk_size": 1200,
   "chunk_overlap": 200,
@@ -1516,15 +1502,13 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "custom_delimiter_splitting"},
   "chunk_size": 1000,
   "chunk_overlap": 150,
   "chunking_config": {
     "custom_delimiter_config": {
-      "delimiter": "###",
-      "include_delimiter": true,
-      "trim_whitespace": true,
-      "case_sensitive": false
+      "delimiter": "###"
     }
   }
 }
@@ -1534,15 +1518,13 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "custom_delimiter_splitting"},
   "chunk_size": 1500,
   "chunk_overlap": 250,
   "chunking_config": {
     "custom_delimiter_config": {
-      "delimiter": "<hr>",
-      "include_delimiter": true,
-      "trim_whitespace": true,
-      "case_sensitive": false
+      "delimiter": "<hr>"
     }
   }
 }
@@ -1569,22 +1551,13 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "custom_delimiter_splitting_with_chunk_size_and_leave_table_alone"},
   "chunk_size": 2000,
   "chunk_overlap": 300,
   "chunking_config": {
     "custom_delimiter_config": {
-      "delimiter": "——END——",
-      "include_delimiter": true,
-      "trim_whitespace": true,
-      "case_sensitive": false
-    },
-    "table_preservation_config": {
-      "preserve_table_structure": true,
-      "min_table_rows": 2,
-      "max_table_rows": 100,
-      "merge_adjacent_paragraphs": true,
-      "smart_merging": true
+      "delimiter": "——END——"
     }
   }
 }
@@ -1601,40 +1574,6 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 - 与Level 6相同，包含所有分隔符相关配置
 
-**`table_preservation_config` 配置**：
-
-- `preserve_table_structure`（必需）：是否保持表格结构完整
-
-  - `true`：保持表格完整，不在表格中间切分
-  - `false`：允许在表格中间切分
-  - 默认值：`true`
-- `min_table_rows`（可选）：最小表格行数
-
-  - 范围：1 - 50
-  - 默认值：`2`
-  - 作用：只有行数大于等于此值的表格才会被识别和保护
-- `max_table_rows`（可选）：最大表格行数
-
-  - 范围：10 - 1000
-  - 默认值：`100`
-  - 作用：限制单个表格的最大行数，避免过大的表格
-- `merge_adjacent_paragraphs`（可选）：是否合并相邻段落
-
-  - `true`：合并相邻段落，直到接近目标切片大小
-  - `false`：不合并段落，严格按照分隔符切分
-  - 默认值：`true`
-- `smart_merging`（可选）：是否启用智能合并
-
-  - `true`：使用智能算法合并段落，考虑语义连贯性
-  - `false`：简单合并，只考虑字符数量
-  - 默认值：`true`
-
-**表格识别规则**：
-
-- 包含 `|`符号的行
-- 分隔符行（如 `|-----|-----|`）
-- 数据行
-
 **智能合并机制**：
 
 - 将相邻段落合并，直到接近目标切片大小
@@ -1646,22 +1585,13 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "custom_delimiter_splitting_with_chunk_size_and_leave_table_alone"},
   "chunk_size": 2500,
   "chunk_overlap": 400,
   "chunking_config": {
     "custom_delimiter_config": {
-      "delimiter": "=== 章节结束 ===",
-      "include_delimiter": true,
-      "trim_whitespace": true,
-      "case_sensitive": false
-    },
-    "table_preservation_config": {
-      "preserve_table_structure": true,
-      "min_table_rows": 3,
-      "max_table_rows": 200,
-      "merge_adjacent_paragraphs": true,
-      "smart_merging": true
+      "delimiter": "=== 章节结束 ==="
     }
   }
 }
@@ -1671,22 +1601,13 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "custom_delimiter_splitting_with_chunk_size_and_leave_table_alone"},
   "chunk_size": 3000,
   "chunk_overlap": 500,
   "chunking_config": {
     "custom_delimiter_config": {
-      "delimiter": "——财务数据结束——",
-      "include_delimiter": true,
-      "trim_whitespace": true,
-      "case_sensitive": false
-    },
-    "table_preservation_config": {
-      "preserve_table_structure": true,
-      "min_table_rows": 2,
-      "max_table_rows": 500,
-      "merge_adjacent_paragraphs": true,
-      "smart_merging": true
+      "delimiter": "——财务数据结束——"
     }
   }
 }
@@ -1714,20 +1635,15 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "alternative_representation_chunking"},
   "chunk_size": 1000,
-  "chunk_overlap": 200,
+  "chunk_overlap": 0,
   "chunking_config": {
     "alternative_representation_config": {
-      "representation_types": ["summary", "keywords", "entities", "sentiment"],
-      "indexing_strategy": "hybrid",
-      "retrieval_optimized": true,
-      "embedding_model": "text-embedding-ada-002",
-      "summary_length": 200,
-      "max_keywords": 10,
-      "entity_types": ["PERSON", "ORG", "LOC", "DATE"],
-      "sentiment_analysis": true,
-      "language_detection": true
+      "include_outline": true,
+      "include_code_blocks": true,
+      "include_tables": true
     }
   }
 }
@@ -1805,6 +1721,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "alternative_representation_chunking"},
   "chunk_size": 1200,
   "chunk_overlap": 250,
@@ -1828,6 +1745,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "alternative_representation_chunking"},
   "chunk_size": 800,
   "chunk_overlap": 150,
@@ -1849,6 +1767,7 @@ curl -X POST "http://localhost:5015/api/v1/file/extract" \
 
 ```json
 {
+  "task_id": "58b19e5f-90f2-448c-8fdc-9c2a73f4f95e",
   "chunking_strategy": {"value": "alternative_representation_chunking"},
   "chunk_size": 1000,
   "chunk_overlap": 200,

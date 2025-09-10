@@ -19,9 +19,11 @@ logger = get_logger(__name__)
 
 
 def _windowed(text: str, size: int, overlap: int) -> List[str]:
+    logger.info(f"_windowed: size={size}, overlap={overlap}")
     if size <= 0:
         return [text]
     if overlap >= size:
+        logger.warning(f"_windowed: overlap {overlap} >= size {size}, adjusting to {size-1}")
         overlap = max(0, size - 1)
     chunks: List[str] = []
     start = 0
@@ -35,7 +37,23 @@ def _windowed(text: str, size: int, overlap: int) -> List[str]:
     return chunks
 
 
-def _split_on_separators(text: str, separators: Sequence[str]) -> List[str]:
+def _windowed_no_overlap(text: str, size: int) -> List[str]:
+    """无重叠的窗口切分，确保chunk之间完全没有重叠"""
+    if size <= 0:
+        return [text]
+    chunks: List[str] = []
+    start = 0
+    n = len(text)
+    while start < n:
+        end = min(n, start + size)
+        chunks.append(text[start:end])
+        if end >= n:
+            break
+        start = end  # 没有overlap，直接跳到下一个位置
+    return chunks
+
+
+def _split_on_separators(text: str, separators: Sequence[str], keep_delimiters: bool = True) -> List[str]:
     if not separators:
         return [text]
     # Build regex: split keeps delimiters to compute logical boundaries
@@ -48,15 +66,16 @@ def _split_on_separators(text: str, separators: Sequence[str]) -> List[str]:
     buffer = ""
     for part in parts:
         if re.fullmatch(pattern, part or ""):
-            buffer += part
+            if keep_delimiters:
+                buffer += part
         else:
-            if buffer:
+            if buffer and keep_delimiters:
                 merged.append((part or "") + buffer)
                 buffer = ""
             else:
                 if part:
                     merged.append(part)
-    if buffer:
+    if buffer and keep_delimiters:
         merged.append(buffer)
     return [p for p in merged if p]
 
@@ -75,7 +94,11 @@ def _by_max_tokens(
         if token_count + length > size:
             if buf:
                 candidate = "".join(buf)
-                chunks.extend(_windowed(candidate, size=size, overlap=overlap))
+                if overlap > 0:
+                    chunks.extend(_windowed(candidate, size=size, overlap=overlap))
+                else:
+                    # 当overlap=0时，直接按size切分，不产生重叠
+                    chunks.extend(_windowed_no_overlap(candidate, size=size))
                 # start new buf with overlap tail
                 if overlap > 0 and chunks:
                     tail = chunks[-1][-overlap:]
@@ -88,7 +111,11 @@ def _by_max_tokens(
         token_count += length
     if buf:
         candidate = "".join(buf)
-        chunks.extend(_windowed(candidate, size=size, overlap=overlap))
+        if overlap > 0:
+            chunks.extend(_windowed(candidate, size=size, overlap=overlap))
+        else:
+            # 当overlap=0时，直接按size切分，不产生重叠
+            chunks.extend(_windowed_no_overlap(candidate, size=size))
     return chunks
 
 
@@ -98,28 +125,71 @@ def level6_custom_delimiter_splitting(
     """按自定义分隔符切分，完全按照delimiter边界切分，不受字数限制。
 
     - delimiter: 非空字符串，支持多字符。若为空则退化为整体文本。
+    - 支持转义字符：\\n (换行), \\t (制表), \\r (回车)
     - 行为：完全按照delimiter进行切分，每发现一个delimiter就创建一个新的分块。
     """
+    print("delimiter1: ", delimiter)
     if not delimiter:
         return [text]  # 如果没有分隔符，返回整个文本作为一个块
-    
+
+    # 处理转义字符
+    processed_delimiter = delimiter
+
+    if delimiter == "\\n":
+        processed_delimiter = "\n"
+    elif delimiter == "\\t":
+        processed_delimiter = "\t"
+    elif delimiter == "\\r":
+        processed_delimiter = "\r"
+    elif delimiter == "\\n\\n":
+        processed_delimiter = "\n\n"
+    else:
+        # 只对包含转义字符的字符串进行unicode_escape处理
+        if '\\' in delimiter:
+            try:
+                processed_delimiter = delimiter.encode().decode('unicode_escape')
+            except Exception:
+                pass  # 如果处理失败，使用原始分隔符
+
     # 使用split方法按delimiter切分，这样每发现一个delimiter就会创建一个新的分块
-    chunks = text.split(delimiter)
-    
-    # 返回所有分块，包括空块
-    return chunks
+    print("delimiter: ", processed_delimiter)
+    chunks = text.split(processed_delimiter)
+
+    # 过滤掉空块，只保留非空内容
+    filtered_chunks = [chunk for chunk in chunks if chunk.strip()]
+
+    # 如果过滤后没有内容，返回原始文本
+    if not filtered_chunks:
+        return [text]
+
+    return filtered_chunks
 
 def custom_delimiter_splitting_with_chunk_size_and_leave_table_alone(
     text: str, *, delimiter: str, config: Optional[ChunkingConfig] = None
 ) -> List[str]:
     """按自定义分隔符切分，但保留markdown表格完整，其他文字智能合并到接近chunk_size。
-    
+
     - delimiter: 非空字符串，支持多字符。若为空则退化为整体文本。
+    - 支持转义字符：\\n (换行), \\t (制表), \\r (回车)
     - 行为：识别markdown表格并保持完整，其他文字按delimiter切分后智能合并，确保每块尽可能接近chunk_size。
     """
     cfg = config or ChunkingConfig()
     if not delimiter:
         return [text]  # 如果没有分隔符，返回整个文本作为一个块
+
+    # 处理转义字符
+    processed_delimiter = delimiter
+    if delimiter == "\\n":
+        processed_delimiter = "\n"
+    elif delimiter == "\\t":
+        processed_delimiter = "\t"
+    elif delimiter == "\\r":
+        processed_delimiter = "\r"
+    elif delimiter == "\\n\\n":
+        processed_delimiter = "\n\n"
+    # 处理其他可能的转义序列
+    else:
+        processed_delimiter = delimiter.encode().decode('unicode_escape')
     
     lines = text.splitlines()
     blocks: List[Tuple[str, str]] = []
@@ -167,8 +237,8 @@ def custom_delimiter_splitting_with_chunk_size_and_leave_table_alone(
             chunks.append(content)
         else:
             # 普通文本按delimiter切分
-            if delimiter in content:
-                text_chunks = content.split(delimiter)
+            if processed_delimiter in content:
+                text_chunks = content.split(processed_delimiter)
                 for chunk in text_chunks:
                     if chunk.strip():  # 跳过空块
                         chunk_size = len(chunk.strip())
@@ -276,7 +346,7 @@ def _smart_merge_text_segments(segments: List[str], target_size: int, overlap: i
 class ChunkingConfig:
     chunk_size: int = settings.DEFAULT_CHUNK_SIZE
     chunk_overlap: int = settings.DEFAULT_CHUNK_OVERLAP
-    separators: Tuple[str, ...] = ("\n\n", "\n", ". ", ", ", " ")
+    separators: Tuple[str, ...] = ("\n\n", "\n", ", ", " ")
 
 
 # -----------------------------
@@ -286,6 +356,7 @@ class ChunkingConfig:
 
 def level1_character_splitting(text: str, config: Optional[ChunkingConfig] = None) -> List[str]:
     cfg = config or ChunkingConfig()
+    logger.info(f"level1_character_splitting: chunk_size={cfg.chunk_size}, chunk_overlap={cfg.chunk_overlap}")
     return _windowed(text, size=cfg.chunk_size, overlap=cfg.chunk_overlap)
 
 
@@ -298,7 +369,9 @@ def level2_recursive_character_splitting(
     text: str, config: Optional[ChunkingConfig] = None
 ) -> List[str]:
     cfg = config or ChunkingConfig()
-    parts = _split_on_separators(text, cfg.separators)
+    # 当overlap=0时，不保留分隔符以避免重叠
+    keep_delimiters = cfg.chunk_overlap > 0
+    parts = _split_on_separators(text, cfg.separators, keep_delimiters=keep_delimiters)
     return _by_max_tokens(parts, size=cfg.chunk_size, overlap=cfg.chunk_overlap)
 
 
@@ -317,7 +390,9 @@ def _split_python_code(text: str, cfg: ChunkingConfig) -> List[str]:
         "\n# ",
         "\n",
     )
-    parts = _split_on_separators(text, separators)
+    # 当overlap=0时，不保留分隔符以避免重叠
+    keep_delimiters = cfg.chunk_overlap > 0
+    parts = _split_on_separators(text, separators, keep_delimiters=keep_delimiters)
     return _by_max_tokens(parts, size=cfg.chunk_size, overlap=cfg.chunk_overlap)
 
 
@@ -448,8 +523,10 @@ def _split_pdf_text(text: str, cfg: ChunkingConfig) -> List[str]:
     # Assume text is already extracted via upstream converter; split by pages if markers exist
     page_sections = re.split(r"\f|\n\s*---\s*page\s*break\s*---\s*\n", text, flags=re.IGNORECASE)
     chunks: List[str] = []
+    # 当overlap=0时，不保留分隔符以避免重叠
+    keep_delimiters = cfg.chunk_overlap > 0
     for page in page_sections:
-        parts = _split_on_separators(page, ("\n\n", "\n", " "))
+        parts = _split_on_separators(page, ("\n\n", "\n", " "), keep_delimiters=keep_delimiters)
         chunks.extend(_by_max_tokens(parts, size=cfg.chunk_size, overlap=cfg.chunk_overlap))
     return chunks
 
@@ -515,8 +592,8 @@ def level4_semantic_splitting(
     client = ai_client or AIClient()
 
     # 步骤1: 将文本分割为句子
-    # 基于句号、问号、感叹号分割
-    sentences = re.split(r'(?<=[.。？！?!])\s+', text.strip())
+    # 基于句号、问号、感叹号分割，不要求后面必须有空格
+    sentences = re.split(r'(?<=[；;。？！?!])', text.strip())
     sentences = [s.strip() for s in sentences if s.strip()]
     
     if len(sentences) <= 1:
@@ -528,7 +605,7 @@ def level4_semantic_splitting(
         # 组合当前句子及其前后buffer_size个句子
         start_idx = max(0, i - buffer_size)
         end_idx = min(len(sentences), i + buffer_size + 1)
-        combined = ' '.join(sentences[start_idx:end_idx])
+        combined = ''.join(sentences[start_idx:end_idx])
         combined_sentences.append({
             'original_index': i,
             'sentence': sentences[i],
@@ -605,20 +682,21 @@ def _split_large_semantic_chunk(
     
     for sentence in sentences:
         # 如果添加这个句子会超出目标大小
-        if current_chunk and len(current_chunk + " " + sentence) > target_size:
+        if current_chunk and len(current_chunk + sentence) > target_size:
             # 保存当前chunk
             if current_chunk:
                 sub_chunks.append(current_chunk)
             
             # 开始新chunk，考虑overlap
             if overlap > 0 and current_chunk:
-                # 保留最后几个字符作为overlap
-                overlap_text = current_chunk[-overlap:] if len(current_chunk) > overlap else current_chunk
-                current_chunk = overlap_text + " " + sentence
+                # 使用完整句子作为overlap，而不是截断字符
+                current_chunk = sentence
+            else:
+                current_chunk = sentence
         else:
             # 添加句子到当前chunk
             if current_chunk:
-                current_chunk += " " + sentence
+                current_chunk += sentence
             else:
                 current_chunk = sentence
     
@@ -642,6 +720,104 @@ AGENT_SPLIT_SYSTEM = (
 )
 
 
+def _split_text_into_sentences(text: str) -> List[str]:
+    """
+    将文本按句子分割，支持中英文句号、问号、感叹号等分隔符
+    """
+    # 使用正则表达式分割句子，保持分隔符
+    sentences = re.split(r'(?<=[。！？?!；;])', text.strip())
+    # 过滤掉空句子
+    sentences = [s.strip() for s in sentences if s.strip()]
+    return sentences
+
+
+def _estimate_token_count(text: str) -> int:
+    """
+    估算文本的token数量（粗略估算，中文大约1个汉字=1.5个token，英文大约1个词=1.3个token）
+    这里使用简单的方法：中文字符按1.5倍，英文字符按0.3倍估算
+    """
+    chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+    total_chars = len(text)
+    english_chars = total_chars - chinese_chars
+
+    # 中文字符估算为1.5个token，英文字符估算为0.3个token
+    estimated_tokens = chinese_chars * 1.5 + english_chars * 0.3
+    return int(estimated_tokens)
+
+
+def _batch_sentences_for_token_limit(sentences: List[str], max_tokens: int = 8000) -> List[List[str]]:
+    """
+    将句子列表按token限制分成多个批次
+    留出2000个token作为prompt和系统消息的空间
+    """
+    batches = []
+    current_batch = []
+    current_tokens = 0
+
+    for sentence in sentences:
+        sentence_tokens = _estimate_token_count(sentence)
+
+        # 如果添加这个句子会超过限制，开始新批次
+        if current_tokens + sentence_tokens > max_tokens and current_batch:
+            batches.append(current_batch)
+            current_batch = [sentence]
+            current_tokens = sentence_tokens
+        else:
+            current_batch.append(sentence)
+            current_tokens += sentence_tokens
+
+    # 添加最后一个批次
+    if current_batch:
+        batches.append(current_batch)
+
+    return batches
+
+
+def _merge_chunks_with_llm(client: AIClient, chunks_batch: List[str], cfg: ChunkingConfig,
+                          system_prompt: str, chunking_prompt: Optional[str], llm_model: Optional[str],
+                          enable_thinking: bool, temperature: float, extra_body: Optional[Dict[str, Any]]) -> List[str]:
+    """
+    使用LLM合并句子批次为chunks
+    """
+    # 将批次中的句子重新组合成文本
+    batch_text = ''.join(chunks_batch)
+
+    # 构建prompt
+    user_prompt = (
+        (chunking_prompt or "Split the following text into chunks respecting a target size of ")
+        + f"{cfg.chunk_size} characters with an overlap of {cfg.chunk_overlap}. "
+        + "Output JSON array only.\n\n"
+        + batch_text
+    )
+
+    # 调用LLM
+    content = client.chat_invoke(
+        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        model_name=llm_model,
+        max_tokens=10000,  # 直接写死最大token数
+        enable_thinking=enable_thinking,
+        temperature=temperature,
+        extra_body=extra_body,
+    )
+
+    # 解析JSON结果
+    match = re.search(r"\[.*\]", content, re.DOTALL)
+    if match:
+        try:
+            import json
+            arr = json.loads(match.group(0))
+            return [str(x) for x in arr if isinstance(x, (str, int, float))]
+        except Exception:
+            # 如果解析失败，使用递归字符分割作为fallback
+            return level2_recursive_character_splitting(batch_text, cfg)
+    else:
+        # 如果没有找到JSON，使用递归字符分割作为fallback
+        return level2_recursive_character_splitting(batch_text, cfg)
+
+
 def level5_agentic_splitting(
     text: str,
     *,
@@ -650,52 +826,60 @@ def level5_agentic_splitting(
     system_prompt: Optional[str] = None,
     chunking_prompt: Optional[str] = None,
     llm_model: Optional[str] = None,
-    max_tokens_per_chunk: Optional[int] = 2048,
     enable_thinking: bool = False,
     temperature: float = 0.0,
     extra_body: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
     cfg = config or ChunkingConfig()
     client = ai_client or AIClient()
+    sys_prompt = system_prompt or AGENT_SPLIT_SYSTEM
 
-    # Provide context length guidance to the agent
-    user_prompt = (
-        (chunking_prompt or "Split the following text into chunks respecting a target size of ")
-        + f"{cfg.chunk_size} characters with an overlap of {cfg.chunk_overlap}. "
-        + "Output JSON array only.\n\n"
-        + text
-    )
-    content = client.chat_invoke(
-        [
-            {"role": "system", "content": system_prompt or AGENT_SPLIT_SYSTEM},
-            {"role": "user", "content": user_prompt},
-        ],
-        model_name=llm_model,
-        max_tokens=max_tokens_per_chunk,
-        enable_thinking=enable_thinking,
-        temperature=temperature,
-        extra_body=extra_body,
-    )
-    # Robust JSON extraction (very forgiving)
-    match = re.search(r"\[.*\]", content, re.DOTALL)
-    if match:
-        try:
-            import json
+    # 步骤1: 将文本按句子分割
+    sentences = _split_text_into_sentences(text)
+    if not sentences:
+        return [text]
 
-            arr = json.loads(match.group(0))
-            chunks = [str(x) for x in arr if isinstance(x, (str, int, float))]
-        except Exception:
-            chunks = level2_recursive_character_splitting(text, cfg)
-    else:
-        chunks = level2_recursive_character_splitting(text, cfg)
+    logger.info(f"level5_agentic_splitting: 文本被分割为 {len(sentences)} 个句子")
+
+    # 步骤2: 将句子分成多个批次，确保每批不超过8000个token（留出2000个token给prompt）
+    sentence_batches = _batch_sentences_for_token_limit(sentences, max_tokens=8000)
+    logger.info(f"level5_agentic_splitting: 句子被分为 {len(sentence_batches)} 个批次进行处理")
+
+    # 步骤3: 对每个批次分别调用LLM进行处理
+    all_chunks = []
+    for i, batch in enumerate(sentence_batches):
+        logger.info(f"level5_agentic_splitting: 处理第 {i+1}/{len(sentence_batches)} 个批次")
+        batch_chunks = _merge_chunks_with_llm(
+            client=client,
+            chunks_batch=batch,
+            cfg=cfg,
+            system_prompt=sys_prompt,
+            chunking_prompt=chunking_prompt or "Split the following text into chunks respecting a target size of ",
+            llm_model=llm_model,
+            enable_thinking=enable_thinking,
+            temperature=temperature,
+            extra_body=extra_body
+        )
+        all_chunks.extend(batch_chunks)
+
+    logger.info(f"level5_agentic_splitting: LLM处理完成，共获得 {len(all_chunks)} 个chunks")
+
+    # 步骤4: 如果总chunks太多，进行最终合并
+    if len(all_chunks) > 100:  # 如果chunks太多，需要进一步合并
+        logger.info("level5_agentic_splitting: chunks数量过多，进行最终合并")
+        # 将chunks重新组合并再次分割
+        combined_text = '\n\n'.join(all_chunks)
+        all_chunks = level2_recursive_character_splitting(combined_text, cfg)
 
     # Enforce size constraints
     normalized: List[str] = []
-    for c in chunks:
+    for c in all_chunks:
         if len(c) > cfg.chunk_size * 2:
             normalized.extend(_windowed(c, size=cfg.chunk_size, overlap=cfg.chunk_overlap))
         else:
             normalized.append(c)
+
+    logger.info(f"level5_agentic_splitting: 处理完成，最终返回 {len(normalized)} 个chunks")
     return normalized
 
 
@@ -727,6 +911,7 @@ def chunk_text(
     if not enable_chunking:
         return {"chunks": [text], "derivatives": []}
 
+    logger.info(f"chunk_text: strategy={chunking_strategy_value}, chunk_size={chunk_size}, chunk_overlap={chunk_overlap}")
     cfg = ChunkingConfig(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     client = ai_client or AIClient()
 
@@ -813,7 +998,6 @@ def chunk_text(
             system_prompt=None,
             chunking_prompt=aconf.get("chunking_prompt"),
             llm_model=llm_model,
-            max_tokens_per_chunk=aconf.get("max_tokens_per_chunk", 2048),
             enable_thinking=bool(aconf.get("enable_thinking", False)),
             temperature=float(aconf.get("temperature", 0.0)),
             extra_body=aconf.get("extra_body"),
@@ -900,7 +1084,7 @@ __all__ = [
 # - 优点：实现/成本最低，速度快；缺点：可能破坏语义边界、句子/段落被硬切。
 #
 # Level 2: Recursive Character Text Splitting（按分隔符递归退化切分）
-# - 思路：先按较强分隔符（如 "\n\n"）切分，若结果仍过长，再逐级退化使用更弱分隔符（如 "\n"、". "、", "、" "），
+# - 思路：先按较强分隔符（如 "\n\n"）切分，若结果仍过长，再逐级退化使用更弱分隔符（如 "\n"、", "、" "），
 #         同时在内部实现中保留分隔符以利于边界重建，最终再按 size/overlap 调整。
 # - 适用：大多数通用文本（文章、网页纯文本等）。
 # - 优点：尽量在自然边界处切分；缺点：对特定文档语法（代码/Markdown/PDF）识别有限。

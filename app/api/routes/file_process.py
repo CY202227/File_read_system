@@ -23,6 +23,11 @@ from app.api.schemas.file_summarize_schemas import (
     FileSummarizeRequest,
     FileSummarizeResponse
 )
+from app.api.schemas.file_cleaning_schemas import (
+    DataClean4RAGRequest,
+    DataClean4RAGResponse
+)
+from app.processors.data_cleanning import clean_data_for_rag
 from app.api.schemas.file_extract_schemas import (
     FileExtractRequest,
     FileExtractResponse
@@ -144,7 +149,7 @@ async def chunk_file_content(request: FileChunkRequest) -> FileChunkResponse:
             "per_file": chunking_data.get("per_file"),
             "chunks_meta": chunking_data.get("chunks_meta")
         })
-        print(status)
+
     return FileChunkResponse(**status)
 
 
@@ -265,3 +270,63 @@ async def extract_file_content(request: FileExtractRequest) -> FileExtractRespon
         })
     
     return FileExtractResponse(**status)
+
+
+@router.post("/file/process/dataclean4rag", response_model=DataClean4RAGResponse, summary="RAG数据清洗接口（清洗论文内容，提取目录和元数据）")
+async def process_data_cleaning_4_rag(request: DataClean4RAGRequest) -> DataClean4RAGResponse:
+    """接受RAG数据清洗请求，执行完整的清洗流程。
+
+    此接口会：
+    1. 强制重新读取文件内容（不管是否已读取）
+    2. 清洗掉引用标记、页眉页脚、参考文献等
+    3. 提取目录结构
+    4. 生成RAG优化的元数据
+    5. 考虑qwen3模型2万字token限制进行分块处理
+
+    返回包含目录、正文和元数据的JSON结果。
+    """
+    logger.info("process_data_cleaning_4_rag: task_id=%s", request.task_id)
+
+    try:
+        # 强制重新读取文件内容
+        logger.info("Force re-reading file for RAG data cleaning: task_id=%s", request.task_id)
+        read_request = FileReadRequest(
+            task_id=request.task_id,
+            purpose=ProcessingPurpose(value="content_reading"),
+            target_format=OutputFormat(value="plain_text"),
+            enable_ocr=True
+        )
+        await read_file_content(read_request)
+
+        # 执行RAG数据清洗
+        logger.info("Starting RAG data cleaning process for task_id=%s", request.task_id)
+        result = await run_in_threadpool(clean_data_for_rag, request.task_id)
+
+        # 构建响应
+        response = DataClean4RAGResponse(
+            task_id=request.task_id,
+            status="completed",
+            directory=result.get("directory"),
+            content=result.get("content"),
+            metadata=result.get("metadata"),
+            processing_time=result.get("processing_time"),
+            error_message=None
+        )
+
+        logger.info("RAG data cleaning completed successfully for task_id=%s", request.task_id)
+        return response
+
+    except Exception as e:
+        logger.exception("RAG data cleaning failed for task_id=%s: %s", request.task_id, str(e))
+
+        # 返回失败响应
+        return DataClean4RAGResponse(
+            task_id=request.task_id,
+            status="failed",
+            directory=None,
+            content=None,
+            metadata=None,
+            processing_time=0.0,
+            error_message=str(e)
+        )
+    

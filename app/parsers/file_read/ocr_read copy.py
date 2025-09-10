@@ -1,17 +1,10 @@
 from __future__ import annotations
-import sys
-import os
-
-# 添加项目根目录到系统路径
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-sys.path.insert(0, project_root)
 
 from pathlib import Path
 from typing import List, Optional
 from PIL import Image
 import concurrent.futures
-import base64
-import io
+import threading
 
 import fitz  # PyMuPDF
 from openai import OpenAI
@@ -115,7 +108,7 @@ class OCRReader:
             raise
     
     @log_call
-    def process_image_with_ocr(self, image: Image.Image, task_id: str) -> str:
+    def process_image_with_ocr(self, image: Image.Image, task_id: str = None) -> str:
         """使用OCR处理图像并返回文本内容。
         
         Args:
@@ -148,79 +141,37 @@ class OCRReader:
         
         try:
             logger.info("开始OCR处理，模式: %s", self.ocr_mode)
-            # 第一次尝试：使用URL方式
-            try:
-                # 构建OCR请求，使用完整的静态文件URL
-                base_url = f"{settings.FULL_URL}"
-
-                # 构建图片URL路径
-                if task_id:
-                    image_url = f"{base_url}/static/ocr_temp/{task_id}/{image_filename}"
-                else:
-                    image_url = f"{base_url}/static/ocr_temp/{image_filename}"
-
-                logger.info("第一次尝试：使用图片URL: %s", image_url)
-
-                response = self.client.chat.completions.create(
-                    model="ocr",
-                    messages=[{
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": dict_promptmode_to_prompt[self.ocr_mode]},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": image_url,
-                                },
+            # 构建OCR请求，使用完整的静态文件URL
+            base_url = f"{settings.FULL_URL}"
+            
+            # 构建图片URL路径
+            if task_id:
+                image_url = f"{base_url}/static/ocr_temp/{task_id}/{image_filename}"
+            else:
+                image_url = f"{base_url}/static/ocr_temp/{image_filename}"
+                
+            logger.info("图片URL: %s", image_url)
+            
+            response = self.client.chat.completions.create(
+                model="ocr",
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": dict_promptmode_to_prompt[self.ocr_mode]},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": image_url,
                             },
-                        ],
-                    }],
-                )
-
-                # 提取OCR结果
-                ocr_text = response.choices[0].message.content or ""
-                logger.debug("OCR处理完成，获取到%s字符", len(ocr_text))
-                return ocr_text
-
-            except Exception as first_attempt_error:
-                logger.warning("第一次尝试失败，使用URL方式: %s", str(first_attempt_error))
-                logger.info("开始第二次尝试，使用Base64编码方式")
-
-                # 第二次尝试：使用Base64编码方式
-                try:
-                    # 将图像转换为Base64
-                    base64_image = self.image_to_base64(image)
-
-                    logger.info("使用Base64编码的图像进行OCR处理")
-
-                    response = self.client.chat.completions.create(
-                        model="ocr",
-                        messages=[{
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": dict_promptmode_to_prompt[self.ocr_mode]},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": base64_image,
-                                    },
-                                },
-                            ],
-                        }],
-                    )
-
-                    # 提取OCR结果
-                    ocr_text = response.choices[0].message.content or ""
-                    print(ocr_text)
-                    logger.debug("OCR处理完成（Base64方式），获取到%s字符", len(ocr_text))
-                    return ocr_text
-
-                except Exception as second_attempt_error:
-                    logger.error("第二次尝试也失败，使用Base64方式: %s", str(second_attempt_error))
-                    logger.error("OCR服务URL: %s", settings.OCR_MODEL_URL)
-                    logger.error("图片文件路径: %s", image_path)
-                    raise RuntimeError(f"OCR处理失败，已尝试URL和Base64两种方式: URL错误-{str(first_attempt_error)}, Base64错误-{str(second_attempt_error)}")
-
+                        },
+                    ],
+                }],
+            )
+            
+            # 提取OCR结果
+            ocr_text = response.choices[0].message.content or ""
+            logger.debug("OCR处理完成，获取到%s字符", len(ocr_text))
+            return ocr_text
         except Exception as e:
             logger.error("OCR处理失败: %s", str(e))
             logger.error("OCR服务URL: %s", settings.OCR_MODEL_URL)
@@ -228,7 +179,7 @@ class OCRReader:
             raise RuntimeError(f"OCR处理失败: {str(e)}")
     
     @log_call
-    def read_pdf_with_ocr(self, file_path: str, task_id: str,dpi: int = 200,) -> str:
+    def read_pdf_with_ocr(self, file_path: str, dpi: int = 200, task_id: str = None) -> str:
         """使用OCR读取PDF文件内容（并发处理多页以提高性能）。
 
         Args:
@@ -306,7 +257,7 @@ class OCRReader:
         return "\n\n".join(texts)
     
     @log_call
-    def read_image_with_ocr(self, file_path: str, task_id: str) -> str:
+    def read_image_with_ocr(self, file_path: str, task_id: str = None) -> str:
         """使用OCR读取图像文件内容。
         
         Args:
@@ -334,6 +285,9 @@ class OCRReader:
         Returns:
             Base64编码的字符串
         """
+        import base64
+        import io
+
         # 将图像保存到内存缓冲区
         buffer = io.BytesIO()
         image.save(buffer, format='PNG')
@@ -353,7 +307,7 @@ class OCRReader:
         return [f".{ext}" for ext in settings.OCR_SUPPORTED_EXTENSIONS]
     
     @log_call
-    def read_file_with_ocr(self, file_path: str, task_id: str) -> str:
+    def read_file_with_ocr(self, file_path: str, task_id: Optional[str] = None) -> str:
         """根据文件类型使用OCR读取文件内容。
         
         Args:
@@ -386,52 +340,3 @@ class OCRReader:
         except Exception as e:
             logger.error("OCR处理失败: %s", e)
             raise
-
-
-def main():
-    """主函数，用于测试OCR功能"""
-    import sys
-    import os
-    image = r"D:\Dev\file_read_system\static\ocr_temp\756c6bc4-b7ca-47ef-b31a-6b9ae605c03d\ocr_image_02bc9e42307a47e3aec79b4296654866.png"
-    import base64
-    with open(image, "rb") as f:
-        base64_image = "data:image/png;base64," + base64.b64encode(f.read()).decode("utf-8")
-
-    logger.info("使用Base64编码的图像进行OCR处理")
-            # 验证OCR配置
-    if not settings.OCR_MODEL_URL:
-            raise ValueError("OCR_MODEL_URL 环境变量未设置")
-    if not settings.OCR_MODEL_API_KEY:
-            raise ValueError("OCR_MODEL_API_KEY 环境变量未设置")
-            
-    logger.info("初始化OCR客户端，URL: %s", settings.OCR_MODEL_URL)
-        
-
-    client = OpenAI(
-        base_url=settings.OCR_MODEL_URL,
-        api_key=settings.OCR_MODEL_API_KEY
-    )
-
-    response = client.chat.completions.create(
-        model="ocr",
-        messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": dict_promptmode_to_prompt["prompt_ocr"]},
-                            {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": base64_image,
-                                },
-                            },
-                        ],
-                    }],
-                )
-
-    # 提取OCR结果
-    ocr_text = response.choices[0].message.content or ""
-    print(ocr_text)
-    logger.debug("OCR处理完成（Base64方式），获取到%s字符", len(ocr_text))
-
-if __name__ == "__main__":
-    main()
